@@ -1,0 +1,26 @@
+{
+  "name": "@mindflow/openclaw",
+  "version": "0.1.0",
+  "description": "MindFlow — personal knowledge graph plugin for OpenClaw",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "openclaw": {
+    "extensions": ["./dist/plugin/index.js"],
+    "skills": ["./skills/mindflow-setup"],
+    "hooks": ["./hooks/mindflow-ingest"]
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.80.0"
+  },
+  "files": [
+    "dist/",
+    "skills/",
+    "hooks/",
+    "openclaw.plugin.json"
+  ]
+}

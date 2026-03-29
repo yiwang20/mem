@@ -1,0 +1,10 @@
+node_modules/
+dist/
+packages/openclaw-plugin/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+screenshots/
+.claude/scheduled_tasks.lock

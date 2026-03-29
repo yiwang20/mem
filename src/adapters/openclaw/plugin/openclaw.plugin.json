@@ -1,0 +1,42 @@
+{
+  "id": "mindflow",
+  "name": "MindFlow",
+  "description": "Personal knowledge graph. Indexes email, iMessage, and documents into a searchable knowledge base with entity extraction and attention detection.",
+  "version": "0.1.0",
+  "skills": ["./skills/mindflow-setup"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "port": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 65535,
+        "description": "Port for the MindFlow HTTP server (default: 3456)"
+      },
+      "dataDir": {
+        "type": "string",
+        "description": "Data directory (default: ~/.mindflow)"
+      },
+      "autoStart": {
+        "type": "boolean",
+        "description": "Auto-start server on first tool call (default: true)"
+      }
+    }
+  },
+  "uiHints": {
+    "port": {
+      "label": "Server Port",
+      "placeholder": "3456"
+    },
+    "dataDir": {
+      "label": "Data Directory",
+      "placeholder": "~/.mindflow",
+      "help": "Where MindFlow stores its database, logs, and configuration"
+    },
+    "autoStart": {
+      "label": "Auto-Start Server",
+      "help": "Automatically start the MindFlow server when a tool is called"
+    }
+  }
+}

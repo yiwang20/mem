@@ -1,0 +1,65 @@
+{
+  "name": "mindflow",
+  "version": "0.1.0",
+  "description": "AI-powered personal knowledge index — local-first, platform-agnostic",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "main": "dist/core/index.js",
+  "types": "dist/core/index.d.ts",
+  "bin": {
+    "mindflow": "./dist/adapters/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:ui": "vite build --config vite.config.ts",
+    "build:plugin": "tsx scripts/build-plugin.ts",
+    "dev": "tsx watch src/adapters/cli/index.ts",
+    "start": "node dist/adapters/cli/index.js",
+    "serve": "tsx src/adapters/http/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.0.0",
+    "@fastify/websocket": "^11.2.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@tailwindcss/vite": "^4.2.2",
+    "@tanstack/react-query": "^5.95.2",
+    "@types/cytoscape": "^3.21.9",
+    "better-sqlite3": "^11.7.0",
+    "chokidar": "^4.0.0",
+    "commander": "^13.1.0",
+    "compromise": "^14.15.0",
+    "cytoscape": "^3.31.0",
+    "fastify": "^5.2.0",
+    "imapflow": "^1.0.170",
+    "pinyin-pro": "^3.26.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.2",
+    "tailwindcss": "^4.2.2",
+    "ulid": "^2.3.0",
+    "zod": "^3.24.0",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "esbuild": "^0.25.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

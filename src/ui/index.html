@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MindFlow</title>
+  <script>
+    (function() {
+      var saved = localStorage.getItem('mindflow-theme');
+      var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="logo">
+        <div class="logo-mark">M</div>
+        <div class="logo-name">MindFlow</div>
+      </div>
+
+      <form id="search-form" class="search-form" autocomplete="off">
+        <div class="search-wrap">
+          <span class="search-icon">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+            </svg>
+          </span>
+          <input id="search-input" class="search-input" type="text" placeholder="Ask anything...">
+          <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+          <span class="search-kbd"><kbd id="search-kbd-hint">/</kbd></span>
+        </div>
+      </form>
+
+      <!-- Graph toggle -->
+      <button id="graph-toggle" class="topbar-btn" type="button" title="Toggle graph" aria-label="Toggle graph panel">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/>
+          <path d="M9.5 10.5L5.5 7.5M14.5 10.5L18.5 7.5M9.5 13.5L5.5 16.5M14.5 13.5L18.5 16.5"/>
+        </svg>
+      </button>
+
+      <!-- Settings -->
+      <button id="settings-toggle" class="topbar-btn" type="button" title="Settings" aria-label="Open settings">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+
+      <!-- Theme toggle -->
+      <button id="theme-toggle" class="topbar-btn" type="button" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="icon-sun" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+        </svg>
+        <svg class="icon-moon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+      </button>
+    </header>
+
+    <nav class="breadcrumbs-bar" id="breadcrumbs"></nav>
+
+    <main class="main-content">
+      <section class="graph-panel" id="graph-panel">
+        <div id="graph-container"></div>
+      </section>
+
+      <div class="resize-handle" id="resize-handle"></div>
+
+      <section class="detail-panel" id="detail-panel">
+        <div class="loading-state">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Connecting...</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Settings slide-out panel -->
+  <div id="settings-panel" class="settings-panel" hidden>
+    <div class="settings-header">
+      <h3>Settings</h3>
+      <button id="settings-close" class="topbar-btn" type="button" aria-label="Close settings">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div id="settings-body" class="settings-body"></div>
+  </div>
+
+  <!-- Command palette backdrop -->
+  <div id="cmd-palette" class="cmd-palette" hidden>
+    <div class="cmd-palette-card">
+      <div class="cmd-palette-input-wrap">
+        <svg class="cmd-palette-icon" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+        </svg>
+        <input id="cmd-input" class="cmd-palette-input" type="text" placeholder="Type a name, question, or command...">
+      </div>
+      <div id="cmd-results" class="cmd-palette-results"></div>
+    </div>
+  </div>
+
+  <script>
+    // Resize handle with localStorage persistence
+    (function() {
+      var handle = document.getElementById('resize-handle');
+      var graph = document.getElementById('graph-panel');
+      var detail = document.getElementById('detail-panel');
+      var startY, gH, dH;
+
+      // Restore saved position
+      var saved = localStorage.getItem('mindflow-resize');
+      if (saved) {
+        try {
+          var s = JSON.parse(saved);
+          if (s.graphH && s.detailH) {
+            graph.style.flex = 'none'; detail.style.flex = 'none';
+            graph.style.height = s.graphH + 'px'; detail.style.height = s.detailH + 'px';
+          }
+        } catch {}
+      }
+
+      handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        startY = e.clientY;
+        gH = graph.getBoundingClientRect().height;
+        dH = detail.getBoundingClientRect().height;
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+
+      function move(e) {
+        var dy = e.clientY - startY;
+        var total = gH + dH;
+        var ng = gH + dy, nd = dH - dy;
+        if (ng < 60) { ng = 60; nd = total - 60; }
+        if (nd < 120) { nd = 120; ng = total - 120; }
+        graph.style.flex = 'none'; detail.style.flex = 'none';
+        graph.style.height = ng + 'px'; detail.style.height = nd + 'px';
+      }
+
+      function up() {
+        document.body.style.cursor = ''; document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        // Save position
+        localStorage.setItem('mindflow-resize', JSON.stringify({
+          graphH: graph.getBoundingClientRect().height,
+          detailH: detail.getBoundingClientRect().height,
+        }));
+      }
+    })();
+  </script>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "@mindflow/openclaw",
+  "version": "0.1.0",
+  "description": "MindFlow OpenClaw plugin — personal knowledge graph tools",
+  "type": "module",
+  "private": true,
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  }
+}
