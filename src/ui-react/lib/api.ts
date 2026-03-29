@@ -193,6 +193,14 @@ export interface TopicAncestorsResponse {
   children: TopicChildNode[];
 }
 
+export interface TopicOverviewResponse {
+  overview: {
+    content: string;
+    generatedAt: number;
+    topicStatus: string;
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // Core fetch helper
 // ---------------------------------------------------------------------------
@@ -377,5 +385,21 @@ export const api = {
 
   getTopicAncestors(id: string): Promise<TopicAncestorsResponse> {
     return apiFetch<TopicAncestorsResponse>(`/topics/${id}/ancestors`);
+  },
+
+  async getTopicOverview(topicId: string): Promise<TopicOverviewResponse> {
+    const res = await fetch(`/api/topics/${topicId}/overview`);
+    if (res.status === 204) return { overview: null };
+    if (!res.ok) {
+      let message = `API error ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body.error) message = String(body.error);
+      } catch {
+        // ignore
+      }
+      throw new ApiError(res.status, message);
+    }
+    return res.json() as Promise<TopicOverviewResponse>;
   },
 };

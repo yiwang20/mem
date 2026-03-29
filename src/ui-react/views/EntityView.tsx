@@ -11,6 +11,7 @@ import type { FilterState } from '../components/TimelineFilters.js';
 import { ContextPanel } from '../components/ContextPanel.js';
 import { KeyFactsTab, RelationshipsTab } from '../components/TabContent.js';
 import { HierarchyNavigator } from '../components/HierarchyNavigator.js';
+import { TopicOverview } from '../components/TopicOverview.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -318,6 +319,11 @@ export function EntityView() {
             pendingCount={pendingItems.length}
             topicCount={relatedTopics.length}
           />
+        )}
+
+        {/* AI Overview — topics only */}
+        {entity.type === 'topic' && (
+          <TopicOverview topicId={entity.id} topicStatus={entity.status} />
         )}
 
         {/* Tab bar */}
