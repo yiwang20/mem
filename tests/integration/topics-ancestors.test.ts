@@ -89,9 +89,8 @@ describe('GET /api/topics/:id/ancestors', () => {
     expect(res.statusCode).toBe(200);
 
     const body = res.json() as { path: Array<{ id: string; label: string; type: string }>; children: unknown[] };
-    expect(body.path).toHaveLength(2);
-    expect(body.path[0]).toEqual({ id: 'root', label: 'Topics', type: 'topic' });
-    expect(body.path[1]).toMatchObject({ id: topic.id, label: 'Q3 Budget', type: 'topic' });
+    // Top-level topic has no ancestors (no virtual root, no self in path)
+    expect(body.path).toHaveLength(0);
     expect(body.children).toHaveLength(0);
   });
 
@@ -108,11 +107,10 @@ describe('GET /api/topics/:id/ancestors', () => {
     expect(res.statusCode).toBe(200);
 
     const body = res.json() as { path: Array<{ id: string; label: string }>; children: unknown[] };
-    expect(body.path).toHaveLength(4); // root virtual + Q3 Budget + Marketing Budget + Social Media Budget
-    expect(body.path[0]).toEqual({ id: 'root', label: 'Topics', type: 'topic' });
-    expect(body.path[1]).toMatchObject({ id: root.id, label: 'Q3 Budget' });
-    expect(body.path[2]).toMatchObject({ id: parent.id, label: 'Marketing Budget' });
-    expect(body.path[3]).toMatchObject({ id: self.id, label: 'Social Media Budget' });
+    // Path contains only real ancestors (no virtual root, no self)
+    expect(body.path).toHaveLength(2); // Q3 Budget + Marketing Budget
+    expect(body.path[0]).toMatchObject({ id: root.id, label: 'Q3 Budget' });
+    expect(body.path[1]).toMatchObject({ id: parent.id, label: 'Marketing Budget' });
   });
 
   it('returns direct children with messageCount', async () => {

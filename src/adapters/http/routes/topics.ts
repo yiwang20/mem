@@ -141,11 +141,11 @@ export async function registerTopicsRoutes(
 
       // The CTE returns [root, ..., parent, self] ordered by depth DESC
       // (highest depth = root, depth 0 = the topic itself).
-      // Prepend a virtual "Topics" root node before the chain.
-      const path = [
-        { id: 'root', label: 'Topics', type: 'topic' },
-        ...ancestorRows.map((r) => ({ id: r.id, label: r.canonical_name, type: 'topic' })),
-      ];
+      // Only include real ancestor entities — no virtual "Topics" root node.
+      // The last row is the topic itself; exclude it from the path (it's the current node).
+      const path = ancestorRows
+        .filter((r) => r.id !== topicId)
+        .map((r) => ({ id: r.id, label: r.canonical_name, type: 'topic' }));
 
       // Direct children of this topic
       type ChildRow = { id: string; canonical_name: string; status: string; msg_count: number };
