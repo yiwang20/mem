@@ -10,7 +10,7 @@ import { TimelineFilters } from '../components/TimelineFilters.js';
 import type { FilterState } from '../components/TimelineFilters.js';
 import { ContextPanel } from '../components/ContextPanel.js';
 import { KeyFactsTab, RelationshipsTab } from '../components/TabContent.js';
-import { AncestorBreadcrumb, ChildTopicsBranch } from '../components/HierarchyNavigator.js';
+import { HierarchyNavigator } from '../components/HierarchyNavigator.js';
 
 // ---------------------------------------------------------------------------
 // Timeline infinite query helpers
@@ -286,11 +286,6 @@ export function EntityView() {
           minWidth: 0,
         }}
       >
-        {/* Ancestor breadcrumb — above EntityHeader, topics only */}
-        {entity.type === 'topic' && (
-          <AncestorBreadcrumb entityId={entity.id} />
-        )}
-
         <EntityHeader
           entity={entity}
           stats={stats}
@@ -298,9 +293,13 @@ export function EntityView() {
           topicCount={relatedTopics.length}
         />
 
-        {/* Child topics branch — below EntityHeader, topics only */}
+        {/* Hierarchy navigator — topics only */}
         {entity.type === 'topic' && (
-          <ChildTopicsBranch entityId={entity.id} />
+          <HierarchyNavigator
+            entityId={entity.id}
+            entityLabel={entity.canonicalName}
+            entityStatus={entity.status === 'archived' ? 'dormant' : entity.status as 'active' | 'dormant'}
+          />
         )}
 
         {/* Tab bar */}
