@@ -282,6 +282,8 @@ export function SettingsPanel() {
       })
     : 'Never';
 
+  if (!settingsOpen) return null;
+
   return (
     <>
       {/* Spin keyframe injection — only once */}
@@ -293,10 +295,8 @@ export function SettingsPanel() {
           position: 'fixed',
           inset: 0,
           zIndex: 199,
-          pointerEvents: settingsOpen ? 'auto' : 'none',
-          background: settingsOpen ? 'rgba(0,0,0,0.18)' : 'transparent',
-          transition: 'background 200ms ease',
-          backdropFilter: settingsOpen ? 'blur(2px)' : 'none',
+          background: 'rgba(0,0,0,0.18)',
+          backdropFilter: 'blur(2px)',
         }}
       />
 
@@ -319,8 +319,6 @@ export function SettingsPanel() {
           boxShadow: 'var(--shadow-lg)',
           display: 'flex',
           flexDirection: 'column',
-          transform: settingsOpen ? 'translateX(0)' : 'translateX(100%)',
-          transition: 'transform 300ms ease-out',
           overflowY: 'auto',
         }}
       >

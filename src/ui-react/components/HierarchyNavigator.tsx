@@ -544,10 +544,10 @@ export function HierarchyNavigator({ entityId, entityLabel, entityStatus = 'acti
             {entityLabel}
           </span>
           {entityStatus === 'active' && (
-            <span className="mf-hn-status mf-hn-status-active">Active</span>
+            <span className="mf-hn-status mf-hn-status-active">Active 活跃</span>
           )}
           {entityStatus === 'dormant' && (
-            <span className="mf-hn-status mf-hn-status-dormant">Dormant</span>
+            <span className="mf-hn-status mf-hn-status-dormant">Dormant 休眠</span>
           )}
         </div>
 
@@ -566,12 +566,12 @@ export function HierarchyNavigator({ entityId, entityLabel, entityStatus = 'acti
             ))}
             {showMore && (
               <button className="mf-hn-more" onClick={() => setExpanded(true)}>
-                +{hiddenChildCount} more
+                +{hiddenChildCount} more 更多
               </button>
             )}
             {showLess && (
               <button className="mf-hn-more" onClick={() => setExpanded(false)}>
-                ↑ Show less
+                Show less 收起
               </button>
             )}
           </div>

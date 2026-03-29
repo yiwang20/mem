@@ -80,6 +80,22 @@ export function PersonCard({ entity }: PersonCardProps) {
         {entity.canonicalName}
       </div>
 
+      {/* Organization / role */}
+      {(entity.attributes?.organization || entity.attributes?.role) && (
+        <div
+          style={{
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+            width: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {(entity.attributes.organization as string | undefined) ?? (entity.attributes.role as string | undefined)}
+        </div>
+      )}
+
       {/* Last seen */}
       <div
         style={{

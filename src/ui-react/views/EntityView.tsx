@@ -273,7 +273,7 @@ export function EntityView() {
     <div
       style={{
         display: 'flex',
-        height: 'calc(100vh - 88px)', // subtract topbar + breadcrumb
+        height: 'calc(100vh - 92px)',
         overflow: 'hidden',
       }}
     >

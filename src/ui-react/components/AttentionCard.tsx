@@ -191,7 +191,7 @@ export function AttentionCard({ item }: AttentionCardProps) {
           {/* Title */}
           <div
             style={{
-              fontSize: '18px',
+              fontSize: '15px',
               fontWeight: 500,
               color: 'var(--text)',
               lineHeight: 1.4,

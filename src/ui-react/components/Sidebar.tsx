@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../lib/store.js';
 import type { ActiveTab, Theme } from '../lib/store.js';
 
@@ -236,6 +237,7 @@ function BottomIconButton({ tooltip, onClick, children }: BottomIconButtonProps)
 
 export function Sidebar() {
   const { activeTab, setActiveTab, theme, setTheme, openSettings } = useAppStore();
+  const navigate = useNavigate();
 
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
@@ -267,7 +269,7 @@ export function Sidebar() {
           key={tab.id}
           tab={tab}
           isActive={activeTab === tab.id}
-          onClick={() => setActiveTab(tab.id)}
+          onClick={() => { setActiveTab(tab.id); navigate('/'); }}
         />
       ))}
 
