@@ -10,7 +10,7 @@ import { TimelineFilters } from '../components/TimelineFilters.js';
 import type { FilterState } from '../components/TimelineFilters.js';
 import { ContextPanel } from '../components/ContextPanel.js';
 import { KeyFactsTab, RelationshipsTab } from '../components/TabContent.js';
-import { MiniOrgChart } from '../components/MiniOrgChart.js';
+import { HierarchyNavigator } from '../components/HierarchyNavigator.js';
 
 // ---------------------------------------------------------------------------
 // Timeline infinite query helpers
@@ -293,9 +293,13 @@ export function EntityView() {
           topicCount={relatedTopics.length}
         />
 
-        {/* Mini org chart — topics only */}
+        {/* Hierarchy navigator — topics only */}
         {entity.type === 'topic' && (
-          <MiniOrgChart entityId={entity.id} entityLabel={entity.canonicalName} />
+          <HierarchyNavigator
+            entityId={entity.id}
+            entityLabel={entity.canonicalName}
+            entityStatus={entity.status === 'archived' ? 'dormant' : entity.status as 'active' | 'dormant'}
+          />
         )}
 
         {/* Tab bar */}
