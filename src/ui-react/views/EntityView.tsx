@@ -13,6 +13,19 @@ import { KeyFactsTab, RelationshipsTab } from '../components/TabContent.js';
 import { HierarchyNavigator } from '../components/HierarchyNavigator.js';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function timeAgo(ts: number): string {
+  if (!ts) return '';
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// ---------------------------------------------------------------------------
 // Timeline infinite query helpers
 // ---------------------------------------------------------------------------
 
@@ -286,19 +299,24 @@ export function EntityView() {
           minWidth: 0,
         }}
       >
-        <EntityHeader
-          entity={entity}
-          stats={stats}
-          pendingCount={pendingItems.length}
-          topicCount={relatedTopics.length}
-        />
-
-        {/* Hierarchy navigator — topics only */}
-        {entity.type === 'topic' && (
+        {/* For topics: HierarchyNavigator embeds the header info */}
+        {entity.type === 'topic' ? (
           <HierarchyNavigator
             entityId={entity.id}
             entityLabel={entity.canonicalName}
-            entityStatus={entity.status === 'archived' ? 'dormant' : entity.status as 'active' | 'dormant'}
+            entityLabelAlt={entity.nameAlt}
+            entityStatus={entity.status}
+            messageCount={stats.messageCount}
+            lastSeenAgo={stats.lastSeenAt ? timeAgo(stats.lastSeenAt) : undefined}
+            topicCount={relatedTopics.length}
+            pendingCount={pendingItems.length || undefined}
+          />
+        ) : (
+          <EntityHeader
+            entity={entity}
+            stats={stats}
+            pendingCount={pendingItems.length}
+            topicCount={relatedTopics.length}
           />
         )}
 

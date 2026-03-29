@@ -111,26 +111,47 @@ const CSS = `
 .mf-hn-gap { flex-shrink: 0; }
 
 .mf-hn-current {
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 12px;
+  padding: 12px 20px;
+  border-radius: 14px;
   background: var(--color-topic-tint);
   border: 2px solid var(--color-topic);
-  font-size: 13px;
+  min-width: 180px;
+  max-width: 280px;
+  cursor: default;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+  z-index: 2;
+}
+.mf-hn-current-name {
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
-  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: default;
-  box-shadow: var(--shadow-xs);
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  position: relative;
-  z-index: 2;
+}
+.mf-hn-current-alt {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+.mf-hn-current-stats {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mf-hn-dot {
   width: 6px; height: 6px;
@@ -417,10 +438,24 @@ const MAX_CHILDREN  = 4;
 interface Props {
   entityId: string;
   entityLabel: string;
-  entityStatus?: 'active' | 'dormant' | 'archived';
+  entityLabelAlt?: string | null;
+  entityStatus?: string;
+  messageCount?: number;
+  lastSeenAgo?: string;
+  topicCount?: number;
+  pendingCount?: number;
 }
 
-export function HierarchyNavigator({ entityId, entityLabel, entityStatus = 'active' }: Props) {
+export function HierarchyNavigator({
+  entityId,
+  entityLabel,
+  entityLabelAlt,
+  entityStatus = 'active',
+  messageCount,
+  lastSeenAgo,
+  topicCount,
+  pendingCount,
+}: Props) {
   useEffect(() => { injectCss(); }, []);
 
   const navigate  = useNavigate();
@@ -503,12 +538,13 @@ export function HierarchyNavigator({ entityId, entityLabel, entityStatus = 'acti
   if (isLoading) {
     return (
       <div className="mf-hn-scroll" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: '200px', height: '36px', borderRadius: '12px', background: 'var(--bg)', opacity: 0.5 }} />
+        <div style={{ width: '240px', height: '80px', borderRadius: '14px', background: 'var(--bg)', opacity: 0.5 }} />
       </div>
     );
   }
 
-  if (!data || (!hasPath && !hasChildren)) return null;
+  // Always render if we have entity data — the current node card is the topic header
+  if (!data) return null;
 
   return (
     <div className="mf-hn-scroll" ref={scrollRef}>
@@ -537,17 +573,32 @@ export function HierarchyNavigator({ entityId, entityLabel, entityStatus = 'acti
         {/* Gap before current */}
         {hasPath && <div className="mf-hn-gap" style={{ width: 40 }} />}
 
-        {/* Current node */}
+        {/* Current node — rich card */}
         <div className="mf-hn-current">
-          <div className="mf-hn-dot" aria-hidden="true" />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {entityLabel}
-          </span>
-          {entityStatus === 'active' && (
-            <span className="mf-hn-status mf-hn-status-active">Active 活跃</span>
+          <div className="mf-hn-current-name">
+            <div className="mf-hn-dot" aria-hidden="true" />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+              {entityLabel}
+            </span>
+            {entityStatus === 'active' && (
+              <span className="mf-hn-status mf-hn-status-active">Active 活跃</span>
+            )}
+            {entityStatus === 'dormant' && (
+              <span className="mf-hn-status mf-hn-status-dormant">Dormant 休眠</span>
+            )}
+          </div>
+          {entityLabelAlt && (
+            <div className="mf-hn-current-alt">{entityLabelAlt}</div>
           )}
-          {entityStatus === 'dormant' && (
-            <span className="mf-hn-status mf-hn-status-dormant">Dormant 休眠</span>
+          {(messageCount !== undefined || lastSeenAgo || topicCount !== undefined || pendingCount !== undefined) && (
+            <div className="mf-hn-current-stats">
+              {[
+                messageCount !== undefined ? `${messageCount} messages` : null,
+                lastSeenAgo ? lastSeenAgo : null,
+                topicCount ? `${topicCount} topics` : null,
+                pendingCount ? `${pendingCount} pending` : null,
+              ].filter(Boolean).join(' · ')}
+            </div>
           )}
         </div>
 
