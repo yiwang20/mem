@@ -27,11 +27,18 @@ export enum RelationshipType {
   MemberOf = 'member_of',
 }
 
-export enum SourceChannel {
-  Email = 'email',
-  IMessage = 'imessage',
-  File = 'file',
-}
+/**
+ * Source channel identifier — open string so any integration can define its own
+ * channel type (e.g. 'slack', 'telegram', 'notion', 'web').
+ * Common well-known values are exported as constants below.
+ */
+export type SourceChannel = string;
+
+export const SourceChannel = {
+  Email: 'email' as SourceChannel,
+  IMessage: 'imessage' as SourceChannel,
+  File: 'file' as SourceChannel,
+} as const;
 
 export enum SourceAdapterType {
   Gmail = 'gmail',

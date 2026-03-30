@@ -2,14 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { MindFlowEngine } from '../../../core/engine.js';
 import type { AttentionItem, Entity, RawItem } from '../../../types/index.js';
-import { EntityType, SourceChannel } from '../../../types/index.js';
+import { EntityType } from '../../../types/index.js';
 
 const QueryBodySchema = z.object({
   query: z.string().min(1).max(2000),
   filters: z
     .object({
       entityTypes: z.array(z.nativeEnum(EntityType)).optional(),
-      channels: z.array(z.nativeEnum(SourceChannel)).optional(),
+      channels: z.array(z.string()).optional(),
       dateRange: z
         .object({
           start: z.number(),

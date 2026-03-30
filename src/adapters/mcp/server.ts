@@ -66,7 +66,7 @@ server.tool(
   {
     query: z.string().describe('Natural language query (e.g. "What did Alice say about the Q3 budget?")'),
     entityTypes: z.array(z.nativeEnum(EntityType)).optional().describe('Filter by entity types'),
-    channels: z.array(z.nativeEnum(SourceChannel)).optional().describe('Filter by source channel'),
+    channels: z.array(z.string()).optional().describe('Filter by source channel (e.g. email, slack, imessage, file)'),
     limit: z.number().int().min(1).max(100).optional().describe('Max results (default 20)'),
   },
   async ({ query, entityTypes, channels, limit }) => {
@@ -199,7 +199,7 @@ server.tool(
   'ingest_item',
   'Push a raw item (email, message, document, note) into MindFlow for processing. MindFlow will extract entities, build relationships, and index it. This is the primary way external agents inject data.',
   {
-    channel: z.nativeEnum(SourceChannel).describe('Source type: email, imessage, or file'),
+    channel: z.string().describe('Source channel (e.g. slack, email, imessage, file, telegram, notion)'),
     subject: z.string().nullable().optional().describe('Subject line (for emails) or title'),
     body: z.string().describe('The content body (plain text, HTML, or markdown)'),
     bodyFormat: z.nativeEnum(BodyFormat).optional().describe('Body format: plaintext, html, or markdown (default plaintext)'),
