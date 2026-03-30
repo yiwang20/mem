@@ -12,6 +12,7 @@
     "mindflow": "./dist/adapters/cli/index.js"
   },
   "scripts": {
+    "prepare": "tsc",
     "build": "tsc",
     "build:ui": "vite build --config vite.config.ts",
     "build:plugin": "tsx scripts/build-plugin.ts",
