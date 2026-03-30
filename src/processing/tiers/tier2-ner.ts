@@ -50,6 +50,8 @@ function isLikelyPerson(name: string): boolean {
   if (trimmed.length < 2) return false;
   // Reject if contains special characters unlikely in names
   if (/[)(\]\[@_:#{}]/.test(trimmed)) return false;
+  // Reject if mostly digits (IDs, phone numbers, dates)
+  if (/^\d[\d\-\.\/]+$/.test(trimmed)) return false;
   // Reject OKR/ID-like patterns
   if (/^[A-Z]{2,}\s*L\d|^[A-Z]+[-_]\d/i.test(trimmed)) return false;
   // Reject single-word names from NER — too ambiguous without a surname.
