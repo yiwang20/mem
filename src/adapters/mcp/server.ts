@@ -337,19 +337,12 @@ async function inferTopicHierarchy(db: any): Promise<void> {
   const orphans = topics.filter(t => !t.parent_entity_id);
   if (orphans.length < 2) return;
 
-  // Try LLM-based hierarchy
   const proxyUrl = process.env.LLM_PROXY_URL;
-  if (proxyUrl) {
-    try {
-      await inferHierarchyWithLLM(db, orphans, proxyUrl);
-      return;
-    } catch (err) {
-      // Fall through to heuristic
-    }
+  if (!proxyUrl) {
+    throw new Error('LLM_PROXY_URL not set — topic hierarchy inference requires LLM');
   }
 
-  // Fallback: name containment heuristic
-  inferHierarchyByName(db, orphans);
+  await inferHierarchyWithLLM(db, orphans, proxyUrl);
 }
 
 async function inferHierarchyWithLLM(
@@ -407,35 +400,6 @@ Return ONLY valid JSON array, no prose. Example: [{"index":1,"parentIndex":null}
   }
 }
 
-function inferHierarchyByName(
-  db: any,
-  topics: Array<{ id: string; canonical_name: string }>,
-): void {
-  const normalized = topics.map(t => ({ ...t, norm: normalizeTopic(t.canonical_name) }));
-  const now = Date.now();
-
-  for (const child of normalized) {
-    let bestParent: typeof normalized[0] | null = null;
-    let bestLen = 0;
-
-    for (const parent of normalized) {
-      if (parent.id === child.id) continue;
-      if (parent.norm.length >= child.norm.length) continue;
-      if (parent.norm.length < 2) continue;
-      if (!child.norm.includes(parent.norm)) continue;
-      if (parent.norm.length > child.norm.length * 0.7) continue;
-      if (parent.norm.length > bestLen) {
-        bestParent = parent;
-        bestLen = parent.norm.length;
-      }
-    }
-
-    if (bestParent) {
-      db.prepare("UPDATE entities SET parent_entity_id = ?, updated_at = ? WHERE id = ?")
-        .run(bestParent.id, now, child.id);
-    }
-  }
-}
 
 // ---- ingest_item ----------------------------------------------------------
 
