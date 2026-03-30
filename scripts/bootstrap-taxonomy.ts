@@ -523,21 +523,31 @@ async function main() {
       }
     }
 
-    const orphanNames = rootTopics.map(t => t.canonical_name);
+    // Get sample item text for each root topic to give LLM semantic context
+    const topicSamples: string[] = [];
+    for (const rt of rootTopics) {
+      const sample = db.prepare(
+        `SELECT ri.body FROM entity_episodes ee JOIN raw_items ri ON ri.id = ee.raw_item_id WHERE ee.entity_id = ? LIMIT 1`
+      ).get(rt.id) as { body: string } | undefined;
+      const snippet = sample ? sample.body.slice(0, 150) : '(no items)';
+      topicSamples.push(`- "${rt.canonical_name}" — sample: ${snippet}`);
+    }
+
     const prompt2 = `You are organizing topics into a hierarchy for a personal knowledge base.
+All these topics come from the SAME project/team — there should be very few root-level topics (ideally 1-3).
 
 Current tree (topics with children shown indented):
 ${treeLines.join('\n')}
 
-These ${orphanNames.length} topics are currently at root level. Many of them should be sub-topics of existing parent topics.
+These ${rootTopics.length} topics are at root level with sample content:
+${topicSamples.join('\n')}
 
-For each root topic, decide:
-- If it belongs under an existing topic as a child, specify the parent
-- If it should stay at root level, mark as null
-- Be conservative: only assign a parent when the relationship is clear
+IMPORTANT: Minimize root-level topics. Most of these topics are aspects/dimensions of a larger project and should be nested under an existing parent. Only leave a topic at root if it truly represents a distinct top-level category.
+
+For each root topic, assign it under the most appropriate existing parent topic.
 
 Return JSON array: [{"topic": "topic name", "parent": "parent topic name or null"}]
-Only include entries where parent is NOT null (skip topics that should stay at root).
+Only include entries where parent is NOT null.
 Return ONLY valid JSON, no prose.`;
 
     try {
