@@ -263,7 +263,12 @@ type TopicRow = { id: string; canonical_name: string; aliases: string };
  * Find an existing topic by fuzzy match, or create a new one.
  * If matched, upgrade the canonical name if the incoming name is better.
  */
-function findOrCreateTopic(db: any, incoming: string, now: number): { id: string } {
+function findOrCreateTopic(db: any, incoming: string, now: number): { id: string } | null {
+  // Reject garbage: URLs, pure numbers, too short
+  if (/^https?:\/\//.test(incoming)) return null;
+  if (/^\d+$/.test(incoming)) return null;
+  if (incoming.trim().length < 2) return null;
+
   const normIncoming = normalizeTopic(incoming);
 
   // 1. Exact match (case-insensitive)
@@ -681,6 +686,7 @@ server.tool(
         const incoming = topicName.trim();
 
         const topicEntity = findOrCreateTopic(eng.db.db, incoming, now);
+        if (!topicEntity) continue; // rejected (URL, garbage, etc.)
 
         // Link item to topic
         try {
