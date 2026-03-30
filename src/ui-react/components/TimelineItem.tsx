@@ -189,6 +189,21 @@ export function TimelineItem({ item, senderName, queryKeys }: TimelineItemProps)
             marginTop: '8px',
           }}
         >
+          {typeof item.metadata?.sourceUrl === 'string' && item.metadata.sourceUrl && (
+            <a
+              href={item.metadata.sourceUrl as string}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: '12px',
+                color: 'var(--accent)',
+                textDecoration: 'none',
+                fontWeight: 500,
+              }}
+            >
+              Open Original
+            </a>
+          )}
           {item.channel === 'email' && item.subject && (
             <a
               href={`mailto:?subject=Re: ${encodeURIComponent(item.subject)}`}
