@@ -519,7 +519,10 @@ Return ONLY valid JSON, no prose.`;
       signal: AbortSignal.timeout(30_000),
     });
 
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      console.error(`[taxonomy] updateTaxonomyOnIngest LLM call failed: ${resp.status}`);
+      return;
+    }
 
     const data = (await resp.json()) as { content?: string };
     const text = data.content ?? '';
@@ -579,8 +582,8 @@ Return ONLY valid JSON, no prose.`;
     ) {
       updateDepthAndPath(db);
     }
-  } catch {
-    // Non-fatal: taxonomy update is best-effort during ingest
+  } catch (err) {
+    console.error(`[taxonomy] updateTaxonomyOnIngest error:`, err);
   }
 }
 
