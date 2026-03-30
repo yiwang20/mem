@@ -144,16 +144,19 @@ export async function runTier2NER(item: RawItem): Promise<ExtractionResult> {
     });
   }
 
-  // --- Extract explicit topic from metadata (set by agent at ingest time) ---
-  const topicHint = typeof item.metadata?.topic === 'string' ? item.metadata.topic.trim() : null;
-  if (topicHint && topicHint.length >= 2) {
-    entities.push({
-      type: EntityType.Topic,
-      name: topicHint,
-      nameAlt: null,
-      attributes: { source: 'explicit_topic' },
-      confidence: 0.95,
-    });
+  // --- Extract explicit topics from metadata (set by agent at ingest time) ---
+  const topicHints = Array.isArray(item.metadata?.topics) ? item.metadata.topics as string[] : [];
+  for (const t of topicHints) {
+    const topicName = typeof t === 'string' ? t.trim() : '';
+    if (topicName.length >= 2) {
+      entities.push({
+        type: EntityType.Topic,
+        name: topicName,
+        nameAlt: null,
+        attributes: { source: 'explicit_topic' },
+        confidence: 0.95,
+      });
+    }
   }
 
   // --- Extract topic from threadId (Slack threads often have meaningful names) ---
