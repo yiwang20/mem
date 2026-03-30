@@ -323,49 +323,116 @@ function findOrCreateTopic(db: any, incoming: string, now: number): { id: string
 }
 
 /**
- * Infer parent-child hierarchy among topics by name containment.
- * If topic A's normalized name is fully contained in topic B's normalized name,
- * and A is significantly shorter, then A is the parent of B.
+ * Infer parent-child hierarchy among topics using LLM semantic understanding.
+ * Falls back to name-containment heuristic if LLM is unavailable.
  */
-function inferTopicHierarchy(db: any): void {
+async function inferTopicHierarchy(db: any): Promise<void> {
   const topics = db
-    .prepare("SELECT id, canonical_name FROM entities WHERE type = 'topic' AND status != 'merged'")
-    .all() as Array<{ id: string; canonical_name: string }>;
+    .prepare("SELECT id, canonical_name, parent_entity_id FROM entities WHERE type = 'topic' AND status != 'merged'")
+    .all() as Array<{ id: string; canonical_name: string; parent_entity_id: string | null }>;
 
-  // Build normalized name map
-  const normalized = topics.map(t => ({
-    ...t,
-    norm: normalizeTopic(t.canonical_name),
-  }));
+  if (topics.length < 2) return;
+
+  // Only process orphan topics (no parent yet)
+  const orphans = topics.filter(t => !t.parent_entity_id);
+  if (orphans.length < 2) return;
+
+  // Try LLM-based hierarchy
+  const proxyUrl = process.env.LLM_PROXY_URL;
+  if (proxyUrl) {
+    try {
+      await inferHierarchyWithLLM(db, orphans, proxyUrl);
+      return;
+    } catch (err) {
+      // Fall through to heuristic
+    }
+  }
+
+  // Fallback: name containment heuristic
+  inferHierarchyByName(db, orphans);
+}
+
+async function inferHierarchyWithLLM(
+  db: any,
+  topics: Array<{ id: string; canonical_name: string }>,
+  proxyUrl: string,
+): Promise<void> {
+  // Build numbered topic list for LLM
+  const topicList = topics.map((t, i) => `${i + 1}. ${t.canonical_name}`).join('\n');
+
+  const prompt = `Given these topics, organize them into a hierarchy. Some topics are sub-topics of others.
+Return a JSON array where each item has "index" (1-based) and "parentIndex" (1-based, or null if top-level).
+
+Rules:
+- A topic is a parent if other topics are specific aspects/workstreams of it
+- Only assign a parent when the relationship is clear and meaningful
+- Most broad/general topics should be top-level (parentIndex: null)
+- Be conservative: if unsure, leave as top-level
+
+Topics:
+${topicList}
+
+Return ONLY valid JSON array, no prose. Example: [{"index":1,"parentIndex":null},{"index":2,"parentIndex":1}]`;
+
+  const resp = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!resp.ok) return;
+
+  const data = (await resp.json()) as { content?: string };
+  const text = data.content ?? '';
+
+  // Parse JSON from response
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start === -1 || end === -1) return;
+
+  const parsed = JSON.parse(text.slice(start, end + 1)) as Array<{ index: number; parentIndex: number | null }>;
+  const now = Date.now();
+
+  for (const item of parsed) {
+    if (!item.parentIndex || item.parentIndex === item.index) continue;
+    const child = topics[item.index - 1];
+    const parent = topics[item.parentIndex - 1];
+    if (!child || !parent) continue;
+
+    db.prepare("UPDATE entities SET parent_entity_id = ?, updated_at = ? WHERE id = ?")
+      .run(parent.id, now, child.id);
+  }
+}
+
+function inferHierarchyByName(
+  db: any,
+  topics: Array<{ id: string; canonical_name: string }>,
+): void {
+  const normalized = topics.map(t => ({ ...t, norm: normalizeTopic(t.canonical_name) }));
+  const now = Date.now();
 
   for (const child of normalized) {
-    // Skip if already has a parent
-    const current = db
-      .prepare("SELECT parent_entity_id FROM entities WHERE id = ?")
-      .get(child.id) as { parent_entity_id: string | null };
-    if (current.parent_entity_id) continue;
-
     let bestParent: typeof normalized[0] | null = null;
-    let bestParentLen = 0;
+    let bestLen = 0;
 
     for (const parent of normalized) {
       if (parent.id === child.id) continue;
-      // Parent name must be shorter and contained in child name
       if (parent.norm.length >= child.norm.length) continue;
       if (parent.norm.length < 2) continue;
       if (!child.norm.includes(parent.norm)) continue;
-      // Parent should be meaningfully shorter (at least 30% shorter)
       if (parent.norm.length > child.norm.length * 0.7) continue;
-      // Pick the longest matching parent (most specific)
-      if (parent.norm.length > bestParentLen) {
+      if (parent.norm.length > bestLen) {
         bestParent = parent;
-        bestParentLen = parent.norm.length;
+        bestLen = parent.norm.length;
       }
     }
 
     if (bestParent) {
       db.prepare("UPDATE entities SET parent_entity_id = ?, updated_at = ? WHERE id = ?")
-        .run(bestParent.id, Date.now(), child.id);
+        .run(bestParent.id, now, child.id);
     }
   }
 }
@@ -446,8 +513,8 @@ server.tool(
         } catch { /* ignore duplicate */ }
       }
 
-      // After all topics are linked, infer hierarchy from name containment
-      inferTopicHierarchy(eng.db.db);
+      // After all topics are linked, infer hierarchy using LLM or name heuristic
+      await inferTopicHierarchy(eng.db.db);
     }
 
     // Enqueue for processing pipeline
