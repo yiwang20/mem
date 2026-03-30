@@ -252,6 +252,42 @@ server.tool(
 
     eng.rawItems.insert(item);
 
+    // Directly create/match explicit topic entities and link them to the item
+    // (bypass NER pipeline to prevent entity resolver from merging them)
+    if (topics && topics.length > 0) {
+      for (const topicName of topics) {
+        if (!topicName || topicName.trim().length < 2) continue;
+        const trimmedTopic = topicName.trim();
+
+        // Find existing topic with exact name match
+        let topicEntity = eng.db.db
+          .prepare("SELECT id FROM entities WHERE type = 'topic' AND canonical_name = ? AND status != 'merged' LIMIT 1")
+          .get(trimmedTopic) as { id: string } | undefined;
+
+        if (!topicEntity) {
+          // Create new topic entity
+          const topicId = ulid();
+          eng.db.db
+            .prepare(`INSERT INTO entities (id, type, canonical_name, name_alt, aliases, attributes, confidence, status, merged_into, first_seen_at, last_seen_at, created_at, updated_at)
+              VALUES (?, 'topic', ?, NULL, '[]', ?, 0.95, 'active', NULL, ?, ?, ?, ?)`)
+            .run(topicId, trimmedTopic, JSON.stringify({ source: 'explicit_topic' }), now, now, now, now);
+          topicEntity = { id: topicId };
+        } else {
+          // Update last_seen_at
+          eng.db.db
+            .prepare("UPDATE entities SET last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+            .run(now, now, topicEntity.id);
+        }
+
+        // Link item to topic
+        try {
+          eng.db.db
+            .prepare("INSERT OR IGNORE INTO entity_episodes (entity_id, raw_item_id, extraction_method, confidence) VALUES (?, ?, 'explicit_topic', 0.95)")
+            .run(topicEntity.id, item.id);
+        } catch { /* ignore duplicate */ }
+      }
+    }
+
     // Enqueue for processing pipeline
     eng.jobs.enqueue({
       id: ulid(),
