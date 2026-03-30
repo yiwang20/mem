@@ -695,11 +695,6 @@ server.tool(
         propagateToAncestors(eng.db.db, topicEntity.id, item.id);
       }
 
-      // After all topics are linked, update taxonomy using LLM (best-effort)
-      const proxyUrl = process.env.LLM_PROXY_URL;
-      if (proxyUrl) {
-        await updateTaxonomyOnIngest(eng.db.db, body, assignedTopicIds, proxyUrl);
-      }
     }
 
     // Enqueue for processing pipeline
@@ -715,10 +710,26 @@ server.tool(
       error: null,
     });
 
-    // Auto-process the ingested item (no need for a separate process_pending call)
-    await eng.ingest();
+    // Process pipeline + taxonomy update in background (fire-and-forget)
+    // so ingest_item returns quickly and doesn't timeout
+    const assignedIds = [...assignedTopicIds];
+    const proxyUrl = process.env.LLM_PROXY_URL;
+    setImmediate(async () => {
+      try {
+        await eng.ingest();
+      } catch (err) {
+        console.error('[ingest_item] background pipeline error:', err);
+      }
+      if (proxyUrl && assignedIds.length > 0) {
+        try {
+          await updateTaxonomyOnIngest(eng.db.db, body, assignedIds, proxyUrl);
+        } catch (err) {
+          console.error('[ingest_item] background taxonomy error:', err);
+        }
+      }
+    });
 
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ingested_and_processed', id: item.id, contentHash }) }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ingested', id: item.id, contentHash }) }] };
   },
 );
 
