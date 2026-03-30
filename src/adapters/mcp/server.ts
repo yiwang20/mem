@@ -199,7 +199,8 @@ server.tool(
   'ingest_item',
   'Push a raw item (email, message, document, note) into MindFlow for processing. MindFlow will extract entities, build relationships, and index it. This is the primary way external agents inject data.',
   {
-    channel: z.string().describe('Source channel (e.g. slack, email, imessage, file, telegram, notion)'),
+    channel: z.string().describe('Source channel (e.g. slack, email, imessage, file, telegram, notion, confluence)'),
+    sourceUrl: z.string().describe('URL to the original content (Slack permalink, Confluence page, Jira ticket, email link, file path, etc.). Users will see an "Open Original" link in the UI.'),
     subject: z.string().nullable().optional().describe('Subject line (for emails) or title'),
     body: z.string().describe('The content body (plain text, HTML, or markdown)'),
     bodyFormat: z.nativeEnum(BodyFormat).optional().describe('Body format: plaintext, html, or markdown (default plaintext)'),
@@ -208,9 +209,9 @@ server.tool(
     externalId: z.string().optional().describe('External ID for deduplication (e.g., email message-id, slack ts)'),
     threadId: z.string().nullable().optional().describe('Thread/conversation ID for grouping related items'),
     eventTime: z.number().optional().describe('When this event occurred (Unix ms). Defaults to now.'),
-    metadata: z.record(z.unknown()).optional().describe('Arbitrary metadata (source URL, tags, etc.)'),
+    metadata: z.record(z.unknown()).optional().describe('Arbitrary metadata (tags, etc.)'),
   },
-  async ({ channel, subject, body, bodyFormat, sender, recipients, externalId, threadId, eventTime, metadata }) => {
+  async ({ channel, sourceUrl, subject, body, bodyFormat, sender, recipients, externalId, threadId, eventTime, metadata }) => {
     const eng = await getEngine();
     const now = Date.now();
     const contentHash = createHash('sha256').update(body).digest('hex');
@@ -241,6 +242,7 @@ server.tool(
       metadata: {
         ...metadata,
         injectedBy: 'mcp',
+        sourceUrl,
         sender: sender ?? undefined,
         recipients: recipients ?? undefined,
       },
