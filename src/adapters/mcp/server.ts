@@ -339,81 +339,273 @@ function findOrCreateTopic(db: any, incoming: string, now: number): { id: string
   return { id: topicId };
 }
 
+type TaxonomyTopic = {
+  id: string;
+  canonical_name: string;
+  parent_entity_id: string | null;
+  depth: number;
+  path: string;
+};
+
 /**
- * Infer parent-child hierarchy among topics using LLM semantic understanding.
- * Falls back to name-containment heuristic if LLM is unavailable.
+ * Serialize the current taxonomy tree as indented text for LLM context.
  */
-async function inferTopicHierarchy(db: any): Promise<void> {
-  const topics = db
-    .prepare("SELECT id, canonical_name, parent_entity_id FROM entities WHERE type = 'topic' AND status != 'merged'")
-    .all() as Array<{ id: string; canonical_name: string; parent_entity_id: string | null }>;
+function serializeTaxonomyTree(topics: TaxonomyTopic[]): string {
+  const byId = new Map<string, TaxonomyTopic>();
+  const children = new Map<string | null, TaxonomyTopic[]>();
 
-  if (topics.length < 2) return;
-
-  // Only process orphan topics (no parent yet)
-  const orphans = topics.filter(t => !t.parent_entity_id);
-  if (orphans.length < 2) return;
-
-  const proxyUrl = process.env.LLM_PROXY_URL;
-  if (!proxyUrl) {
-    throw new Error('LLM_PROXY_URL not set — topic hierarchy inference requires LLM');
+  for (const t of topics) {
+    byId.set(t.id, t);
+    const key = t.parent_entity_id;
+    if (!children.has(key)) children.set(key, []);
+    children.get(key)!.push(t);
   }
 
-  await inferHierarchyWithLLM(db, orphans, proxyUrl);
+  const lines: string[] = [];
+
+  function render(parentId: string | null, indent: string): void {
+    const kids = children.get(parentId) ?? [];
+    for (const kid of kids.sort((a, b) => a.canonical_name.localeCompare(b.canonical_name))) {
+      lines.push(`${indent}${kid.canonical_name}`);
+      render(kid.id, indent + '  ');
+    }
+  }
+
+  render(null, '');
+  return lines.join('\n');
 }
 
-async function inferHierarchyWithLLM(
-  db: any,
-  topics: Array<{ id: string; canonical_name: string }>,
-  proxyUrl: string,
-): Promise<void> {
-  // Build numbered topic list for LLM
-  const topicList = topics.map((t, i) => `${i + 1}. ${t.canonical_name}`).join('\n');
+/**
+ * Recalculate depth and path for all topics after any hierarchy change.
+ * BFS from roots (parent_entity_id IS NULL).
+ */
+function updateDepthAndPath(db: any): void {
+  const allTopics = db
+    .prepare("SELECT id, canonical_name, parent_entity_id FROM entities WHERE type = 'topic' AND status != 'merged'")
+    .all() as TaxonomyTopic[];
 
-  const prompt = `Given these topics, organize them into a hierarchy. Some topics are sub-topics of others.
-Return a JSON array where each item has "index" (1-based) and "parentIndex" (1-based, or null if top-level).
+  const byId = new Map<string, TaxonomyTopic>();
+  const children = new Map<string | null, string[]>();
 
-Rules:
-- A topic is a parent if other topics are specific aspects/workstreams of it
-- Only assign a parent when the relationship is clear and meaningful
-- Most broad/general topics should be top-level (parentIndex: null)
-- Be conservative: if unsure, leave as top-level
+  for (const t of allTopics) {
+    byId.set(t.id, t);
+    const parentKey = t.parent_entity_id;
+    if (!children.has(parentKey)) children.set(parentKey, []);
+    children.get(parentKey)!.push(t.id);
+  }
 
-Topics:
-${topicList}
+  const queue: Array<{ id: string; depth: number; path: string }> = [];
+  const roots = children.get(null) ?? [];
+  for (const rootId of roots) {
+    const t = byId.get(rootId);
+    if (!t) continue;
+    queue.push({ id: rootId, depth: 0, path: '/' + t.canonical_name });
+  }
 
-Return ONLY valid JSON array, no prose. Example: [{"index":1,"parentIndex":null},{"index":2,"parentIndex":1}]`;
-
-  const resp = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-
-  if (!resp.ok) return;
-
-  const data = (await resp.json()) as { content?: string };
-  const text = data.content ?? '';
-
-  // Parse JSON from response
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start === -1 || end === -1) return;
-
-  const parsed = JSON.parse(text.slice(start, end + 1)) as Array<{ index: number; parentIndex: number | null }>;
+  const stmt = db.prepare("UPDATE entities SET depth = ?, path = ?, updated_at = ? WHERE id = ?");
   const now = Date.now();
 
-  for (const item of parsed) {
-    if (!item.parentIndex || item.parentIndex === item.index) continue;
-    const child = topics[item.index - 1];
-    const parent = topics[item.parentIndex - 1];
-    if (!child || !parent) continue;
+  while (queue.length > 0) {
+    const item = queue.shift()!;
+    stmt.run(item.depth, item.path, now, item.id);
+    const childIds = children.get(item.id) ?? [];
+    for (const childId of childIds) {
+      const child = byId.get(childId);
+      if (!child) continue;
+      queue.push({
+        id: childId,
+        depth: item.depth + 1,
+        path: item.path + '/' + child.canonical_name,
+      });
+    }
+  }
+}
 
-    db.prepare("UPDATE entities SET parent_entity_id = ?, updated_at = ? WHERE id = ?")
-      .run(parent.id, now, child.id);
+/**
+ * Log a taxonomy action to taxonomy_log.
+ */
+function logTaxonomyAction(
+  db: any,
+  action: string,
+  entityId: string,
+  opts: {
+    oldParentId?: string | null;
+    newParentId?: string | null;
+    reason?: string;
+    confidence?: number;
+    source: string;
+  },
+): void {
+  db.prepare(`INSERT INTO taxonomy_log (id, action, entity_id, old_parent_id, new_parent_id, reason, confidence, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      ulid(),
+      action,
+      entityId,
+      opts.oldParentId ?? null,
+      opts.newParentId ?? null,
+      opts.reason ?? null,
+      opts.confidence ?? null,
+      opts.source,
+      Date.now(),
+    );
+}
+
+type IngestTaxonomyResponse = {
+  topic_assignments?: string[];
+  new_topics?: Array<{ name: string; parent: string | null }>;
+  misplacements?: Array<{ topic: string; suggested_parent: string; reason: string }>;
+};
+
+/**
+ * New taxonomy step for ingest_item:
+ * Sends the current taxonomy tree + new item context to LLM,
+ * applies new topic parents, logs misplacements for daily check.
+ */
+async function updateTaxonomyOnIngest(
+  db: any,
+  itemBody: string,
+  assignedTopicIds: string[],
+  proxyUrl: string,
+): Promise<void> {
+  // Get full current taxonomy
+  const allTopics = db
+    .prepare("SELECT id, canonical_name, parent_entity_id, depth, path FROM entities WHERE type = 'topic' AND status != 'merged'")
+    .all() as TaxonomyTopic[];
+
+  if (allTopics.length < 2) return;
+
+  // Build name→id map for lookup
+  const topicByName = new Map<string, string>();
+  for (const t of allTopics) {
+    topicByName.set(t.canonical_name.toLowerCase(), t.id);
+  }
+
+  const assignedNames = assignedTopicIds
+    .map(id => allTopics.find(t => t.id === id)?.canonical_name)
+    .filter(Boolean) as string[];
+
+  const treeText = serializeTaxonomyTree(allTopics);
+  const truncatedBody = itemBody.slice(0, 500);
+
+  const prompt = `You are maintaining a topic taxonomy for a personal knowledge base.
+
+Current taxonomy (indented = child of parent above):
+${treeText || '(empty)'}
+
+New item being ingested (first 500 chars):
+${truncatedBody}
+
+Topics assigned to this item: ${assignedNames.length > 0 ? assignedNames.join(', ') : '(none)'}
+
+Tasks:
+1. For any newly created topics in the assigned list that have no parent yet, suggest where they fit in the taxonomy.
+2. If any assigned topics appear to be misplaced in the current tree, flag them (don't move them, just flag).
+
+Return JSON:
+{
+  "new_topics": [{"name": "topic name", "parent": "parent topic name or null"}],
+  "misplacements": [{"topic": "topic name", "suggested_parent": "better parent name", "reason": "why"}]
+}
+
+Only include entries where you are confident. Return empty arrays if nothing to suggest.
+Return ONLY valid JSON, no prose.`;
+
+  try {
+    const resp = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!resp.ok) return;
+
+    const data = (await resp.json()) as { content?: string };
+    const text = data.content ?? '';
+
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) return;
+
+    const parsed = JSON.parse(text.slice(start, end + 1)) as IngestTaxonomyResponse;
+    const now = Date.now();
+
+    // Apply new topic parent assignments
+    if (parsed.new_topics && Array.isArray(parsed.new_topics)) {
+      for (const nt of parsed.new_topics) {
+        if (!nt.name || !nt.parent) continue;
+        const childId = topicByName.get(nt.name.toLowerCase());
+        const parentId = topicByName.get(nt.parent.toLowerCase());
+        if (!childId || !parentId || childId === parentId) continue;
+
+        // Only set parent if not already set
+        const current = db
+          .prepare("SELECT parent_entity_id FROM entities WHERE id = ?")
+          .get(childId) as { parent_entity_id: string | null } | undefined;
+        if (current?.parent_entity_id) continue;
+
+        db.prepare("UPDATE entities SET parent_entity_id = ?, updated_at = ? WHERE id = ?")
+          .run(parentId, now, childId);
+        logTaxonomyAction(db, 'set_parent', childId, {
+          newParentId: parentId,
+          reason: `Ingest-time LLM placement under "${nt.parent}"`,
+          confidence: 0.8,
+          source: 'ingest',
+        });
+      }
+    }
+
+    // Log misplacements (don't auto-fix — let daily_check handle)
+    if (parsed.misplacements && Array.isArray(parsed.misplacements)) {
+      for (const mp of parsed.misplacements) {
+        if (!mp.topic || !mp.suggested_parent) continue;
+        const topicId = topicByName.get(mp.topic.toLowerCase());
+        if (!topicId) continue;
+
+        logTaxonomyAction(db, 'set_parent', topicId, {
+          newParentId: null, // not applying yet
+          reason: `Misplacement flag: suggested parent "${mp.suggested_parent}" — ${mp.reason}`,
+          confidence: 0.6,
+          source: 'ingest',
+        });
+      }
+    }
+
+    // Recompute depth/path for any changes
+    if (
+      (parsed.new_topics?.length ?? 0) > 0 ||
+      (parsed.misplacements?.length ?? 0) > 0
+    ) {
+      updateDepthAndPath(db);
+    }
+  } catch {
+    // Non-fatal: taxonomy update is best-effort during ingest
+  }
+}
+
+/**
+ * Tag propagation: after assigning a topic to an item, also add episodes
+ * for all ancestor topics. This improves subsumption data quality.
+ */
+function propagateToAncestors(db: any, topicId: string, itemId: string): void {
+  let currentId: string | null = topicId;
+
+  while (currentId) {
+    const parent = db
+      .prepare("SELECT parent_entity_id FROM entities WHERE id = ?")
+      .get(currentId) as { parent_entity_id: string | null } | undefined;
+
+    const parentId = parent?.parent_entity_id ?? null;
+    if (!parentId) break;
+
+    // Add episode for ancestor (ignore duplicate)
+    try {
+      db.prepare("INSERT OR IGNORE INTO entity_episodes (entity_id, raw_item_id, extraction_method, confidence) VALUES (?, ?, 'ancestor_propagation', 0.7)")
+        .run(parentId, itemId);
+    } catch { /* ignore */ }
+
+    currentId = parentId;
   }
 }
 
@@ -479,6 +671,7 @@ server.tool(
 
     // Directly create/match explicit topic entities and link them to the item.
     // Uses smart fuzzy matching and picks the best canonical name.
+    const assignedTopicIds: string[] = [];
     if (topics && topics.length > 0) {
       for (const topicName of topics) {
         if (!topicName || topicName.trim().length < 2) continue;
@@ -492,10 +685,18 @@ server.tool(
             .prepare("INSERT OR IGNORE INTO entity_episodes (entity_id, raw_item_id, extraction_method, confidence) VALUES (?, ?, 'explicit_topic', 0.95)")
             .run(topicEntity.id, item.id);
         } catch { /* ignore duplicate */ }
+
+        assignedTopicIds.push(topicEntity.id);
+
+        // Propagate to ancestor topics for better subsumption data
+        propagateToAncestors(eng.db.db, topicEntity.id, item.id);
       }
 
-      // After all topics are linked, infer hierarchy using LLM or name heuristic
-      await inferTopicHierarchy(eng.db.db);
+      // After all topics are linked, update taxonomy using LLM (best-effort)
+      const proxyUrl = process.env.LLM_PROXY_URL;
+      if (proxyUrl) {
+        await updateTaxonomyOnIngest(eng.db.db, body, assignedTopicIds, proxyUrl);
+      }
     }
 
     // Enqueue for processing pipeline
