@@ -53,8 +53,8 @@ export interface SubTopicStats {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MERGE_THRESHOLD = 0.3; // stop merging when best Jaccard < 0.3
-const MIN_CLUSTER_SIZE = 3; // only create topics for clusters this size+
+const MERGE_THRESHOLD = 0.15; // stop merging when best Jaccard < 0.15 (tighter clusters)
+const MIN_CLUSTER_SIZE = 2; // create topics for clusters with 2+ entities
 const DRIFT_THRESHOLD = 0.5; // member overlap < 50% = drifted
 
 // ---------------------------------------------------------------------------
@@ -161,18 +161,20 @@ export class TopicClusterer {
   /**
    * Build a co-occurrence matrix from entity_episodes.
    * Two entities co-occur if they both appear in the same raw_item.
+   * Excludes thread entities and topic entities (topics are already created
+   * by NER from thread IDs / subjects — clustering should not re-cluster them).
    */
   private buildCooccurrenceMatrix(): CooccurrenceMatrix {
-    // Get all (entity_id, raw_item_id) pairs for non-merged entities
+    // Get all (entity_id, raw_item_id) pairs for non-merged, non-topic entities
     const rows = this.db
       .prepare(
         `SELECT ee.entity_id, ee.raw_item_id
          FROM entity_episodes ee
          JOIN entities e ON e.id = ee.entity_id
          WHERE e.status != 'merged'
-           AND e.type != ?`,
+           AND e.type NOT IN (?, ?, ?, ?, ?)`,
       )
-      .all(EntityType.Thread) as Array<{ entity_id: string; raw_item_id: string }>;
+      .all(EntityType.Thread, EntityType.Topic, EntityType.Person, EntityType.KeyFact, EntityType.ActionItem) as Array<{ entity_id: string; raw_item_id: string }>;
 
     // Group by raw_item_id → set of entity_ids
     const itemToEntities = new Map<string, Set<string>>();
@@ -218,25 +220,41 @@ export class TopicClusterer {
   private inferTopicName(entityIds: string[]): string {
     if (entityIds.length === 0) return 'Unknown Topic';
 
-    // First try: use the canonical names of top entities in the cluster
     const placeholders = entityIds.map(() => '?').join(',');
+
+    // Get entity names and types for the cluster
     const entityRows = this.db
       .prepare(
-        `SELECT canonical_name FROM entities
+        `SELECT canonical_name, type FROM entities
          WHERE id IN (${placeholders})
            AND status != 'merged'
-         ORDER BY last_seen_at DESC
-         LIMIT 3`,
+         ORDER BY last_seen_at DESC`,
       )
-      .all(...entityIds) as Array<{ canonical_name: string }>;
+      .all(...entityIds) as Array<{ canonical_name: string; type: string }>;
 
-    if (entityRows.length > 0) {
-      return entityRows
-        .map((r) => r.canonical_name)
-        .join(', ');
+    if (entityRows.length === 0) return 'Unnamed Topic';
+
+    // Prefer topic entities, then key_facts, then anything non-person for naming
+    const topicEntities = entityRows.filter(r => r.type === 'topic');
+    const conceptEntities = entityRows.filter(r => r.type !== 'person' && r.type !== 'thread');
+    const nameSources = topicEntities.length > 0 ? topicEntities : conceptEntities.length > 0 ? conceptEntities : entityRows;
+
+    // Filter out garbage names and metadata-derived noise
+    const goodNames = nameSources
+      .map(r => r.canonical_name)
+      .filter(n => {
+        if (n.length < 3) return false;
+        if (/[)(\]\[@_:#{}]/.test(n)) return false;
+        // Skip generic extracted values like "Date: today", "Amount: $80K"
+        if (/^(Date|Amount|Deadline|Location):/i.test(n)) return false;
+        return true;
+      });
+
+    if (goodNames.length === 0) {
+      return entityRows[0]?.canonical_name ?? 'Unnamed Topic';
     }
 
-    return 'Unnamed Topic';
+    return goodNames.slice(0, 2).join(' & ');
   }
 
   /**

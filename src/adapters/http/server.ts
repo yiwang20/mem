@@ -16,6 +16,7 @@ import { registerExportRoutes } from './routes/export.js';
 import { registerConfigRoutes } from './routes/config.js';
 import { registerIngestRoutes } from './routes/ingest.js';
 import { registerTopicsRoutes } from './routes/topics.js';
+import { registerItemRoutes } from './routes/items.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Prefer dist/ui (React build) over src/ui (legacy vanilla SPA)
@@ -74,6 +75,7 @@ export class HttpServer {
     await registerConfigRoutes(this.app, this.engine);
     await registerIngestRoutes(this.app, this.engine);
     await registerTopicsRoutes(this.app, this.engine);
+    await registerItemRoutes(this.app, this.engine);
 
     // Fallback: serve index.html for SPA client-side routing
     if (existsSync(UI_DIR)) {

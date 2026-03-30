@@ -388,6 +388,10 @@ export const api = {
     return apiFetch<TopicAncestorsResponse>(`/topics/${id}/ancestors`);
   },
 
+  deleteItem(id: string): Promise<{ success: boolean }> {
+    return apiFetch<{ success: boolean }>(`/items/${id}`, { method: 'DELETE' });
+  },
+
   async getTopicOverview(topicId: string): Promise<TopicOverviewResponse> {
     const res = await fetch(`/api/topics/${topicId}/overview`);
     if (res.status === 204) return { overview: null };

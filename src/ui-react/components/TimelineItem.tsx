@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api.js';
 import type { RawItem } from '../lib/api.js';
 
 // ---------------------------------------------------------------------------
@@ -44,10 +46,35 @@ interface TimelineItemProps {
   item: RawItem;
   /** Display name for the sender entity (caller resolves from entity cache) */
   senderName?: string;
+  /** Query keys to invalidate after deletion (e.g. ['timeline', entityId, filters]) */
+  queryKeys?: unknown[][];
 }
 
-export function TimelineItem({ item, senderName }: TimelineItemProps) {
+export function TimelineItem({ item, senderName, queryKeys }: TimelineItemProps) {
   const [hovered, setHovered] = useState(false);
+  const [deleteState, setDeleteState] = useState<'idle' | 'confirming' | 'deleting'>('idle');
+  const [deleted, setDeleted] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Optimistic removal — hide immediately on confirm, then invalidate queries
+  async function handleConfirmDelete() {
+    setDeleteState('deleting');
+    setDeleted(true); // optimistic
+    try {
+      await api.deleteItem(item.id);
+      if (queryKeys) {
+        for (const key of queryKeys) {
+          await queryClient.invalidateQueries({ queryKey: key });
+        }
+      }
+    } catch {
+      // Rollback optimistic removal on error
+      setDeleted(false);
+      setDeleteState('idle');
+    }
+  }
+
+  if (deleted) return null;
 
   const ch = CHANNEL_CONFIG[item.channel as keyof typeof CHANNEL_CONFIG] ?? DEFAULT_CHANNEL;
   const preview = truncate(item.body.replace(/\s+/g, ' ').trim(), 160);
@@ -210,6 +237,65 @@ export function TimelineItem({ item, senderName }: TimelineItemProps) {
           >
             Copy
           </button>
+
+          {deleteState === 'idle' && (
+            <button
+              style={{
+                fontSize: '12px',
+                color: '#E05C5C',
+                border: 'none',
+                background: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+              onClick={() => setDeleteState('confirming')}
+            >
+              Delete
+            </button>
+          )}
+
+          {deleteState === 'confirming' && (
+            <>
+              <span style={{ fontSize: '12px', color: '#E05C5C', fontWeight: 500 }}>
+                Confirm delete?
+              </span>
+              <button
+                style={{
+                  fontSize: '12px',
+                  color: '#E05C5C',
+                  border: 'none',
+                  background: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                }}
+                onClick={() => { void handleConfirmDelete(); }}
+              >
+                Yes
+              </button>
+              <button
+                style={{
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  border: 'none',
+                  background: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                }}
+                onClick={() => setDeleteState('idle')}
+              >
+                No
+              </button>
+            </>
+          )}
+
+          {deleteState === 'deleting' && (
+            <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+              Deleting…
+            </span>
+          )}
         </div>
       )}
     </div>

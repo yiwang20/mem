@@ -37,6 +37,40 @@ const CHINESE_NAME_RE = new RegExp(
 const CHINESE_TITLE_RE = /[\u4e00-\u9fff]{1,3}(?:总|先生|女士|老师|经理|主任|主席|书记|部长|局长|处长|科长|厂长|院长|校长|市长|省长)/g;
 
 // ---------------------------------------------------------------------------
+// Post-processing filters for NER quality
+// ---------------------------------------------------------------------------
+
+function cleanName(name: string): string {
+  // Strip trailing/leading punctuation that NER leaves behind
+  return name.trim().replace(/^[.,;:!]+|[.,;:!]+$/g, '').trim();
+}
+
+function isLikelyPerson(name: string): boolean {
+  const trimmed = cleanName(name);
+  if (trimmed.length < 2) return false;
+  // Reject if contains special characters unlikely in names
+  if (/[)(\]\[@_:#{}]/.test(trimmed)) return false;
+  // Reject OKR/ID-like patterns
+  if (/^[A-Z]{2,}\s*L\d|^[A-Z]+[-_]\d/i.test(trimmed)) return false;
+  // Reject single-word names from NER — too ambiguous without a surname.
+  // Full names come from metadata.sender which is more reliable.
+  const words = trimmed.split(/\s+/);
+  if (words.length < 2) return false;
+  // Reject if contains technical keywords (these are product/feature names, not people)
+  const techWords = /\b(Search|Service|Connector|Goal|Design|Path|System|Platform|Engine|Module|API|SDK|Config|Manager|Builder|Driver|Pipeline|Model|Foundation|Teams|Enterprise)\b/i;
+  if (techWords.test(trimmed)) return false;
+  return true;
+}
+
+function isLikelyOrganization(name: string): boolean {
+  const trimmed = name.trim();
+  if (/[)(\]\[@_:#{}]/.test(trimmed)) return false;
+  if (/[.,;:!]$/.test(trimmed)) return false;
+  if (trimmed.length < 2) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Tier 2 NER extraction
 // ---------------------------------------------------------------------------
 
@@ -49,21 +83,50 @@ export async function runTier2NER(item: RawItem): Promise<ExtractionResult> {
   const doc = nlp(text);
 
   for (const name of dedupe(doc.people().out('array'))) {
-    if (name.trim().length < 2) continue;
+    const cleaned = cleanName(name);
+    if (cleaned.length < 2) continue;
+    if (!isLikelyPerson(cleaned)) continue;
     entities.push({
       type: EntityType.Person,
-      name: name.trim(),
+      name: cleaned,
       nameAlt: null,
       attributes: { source: 'compromise_ner' },
       confidence: 0.75,
     });
   }
 
+  // --- Extract sender/recipients from metadata (Slack, MCP injected data) ---
+  const senderName = typeof item.metadata?.sender === 'string' ? item.metadata.sender.trim() : null;
+  if (senderName && senderName.length >= 2 && isLikelyPerson(senderName)) {
+    entities.push({
+      type: EntityType.Person,
+      name: senderName,
+      nameAlt: null,
+      attributes: { source: 'metadata_sender' },
+      confidence: 0.9,
+    });
+  }
+  const recipients = Array.isArray(item.metadata?.recipients) ? item.metadata.recipients as string[] : [];
+  for (const r of recipients) {
+    const rName = typeof r === 'string' ? r.trim() : '';
+    if (rName.length >= 2 && isLikelyPerson(rName)) {
+      entities.push({
+        type: EntityType.Person,
+        name: rName,
+        nameAlt: null,
+        attributes: { source: 'metadata_recipient' },
+        confidence: 0.85,
+      });
+    }
+  }
+
   for (const org of dedupe(doc.organizations().out('array'))) {
-    if (org.trim().length < 2) continue;
+    const cleanedOrg = cleanName(org);
+    if (cleanedOrg.length < 2) continue;
+    if (!isLikelyOrganization(cleanedOrg)) continue;
     entities.push({
       type: EntityType.Topic,
-      name: org.trim(),
+      name: cleanedOrg,
       nameAlt: null,
       attributes: { organization: true, source: 'compromise_ner' },
       confidence: 0.7,
@@ -79,6 +142,38 @@ export async function runTier2NER(item: RawItem): Promise<ExtractionResult> {
       attributes: { location: place.trim(), source: 'compromise_ner' },
       confidence: 0.65,
     });
+  }
+
+  // --- Extract topic from threadId (Slack threads often have meaningful names) ---
+  if (item.threadId) {
+    // Convert slug-style thread IDs to readable topic names: "auth-migration" -> "Auth Migration"
+    const threadName = item.threadId
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim();
+    if (threadName.length >= 3 && !/^\d+$/.test(threadName)) {
+      entities.push({
+        type: EntityType.Topic,
+        name: threadName,
+        nameAlt: null,
+        attributes: { source: 'thread_id' },
+        confidence: 0.85,
+      });
+    }
+  }
+
+  // --- Extract subject as topic for emails/documents ---
+  if (item.subject && item.subject.length >= 5) {
+    const subjectClean = item.subject.replace(/^(Re|Fwd|FW):\s*/i, '').trim();
+    if (subjectClean.length >= 5) {
+      entities.push({
+        type: EntityType.Topic,
+        name: subjectClean,
+        nameAlt: null,
+        attributes: { source: 'subject_line' },
+        confidence: 0.8,
+      });
+    }
   }
 
   // --- Chinese NER via regex ---
@@ -109,8 +204,11 @@ export async function runTier2NER(item: RawItem): Promise<ExtractionResult> {
       ? DetectedLanguage.Mixed
       : DetectedLanguage.English;
 
+  // --- Deduplicate: if a shorter name is a substring of a longer name of the same type, drop the shorter one ---
+  const deduped = dedupeEntities(entities);
+
   return {
-    entities,
+    entities: deduped,
     relationships: [],
     summary: null,
     language,
@@ -119,4 +217,28 @@ export async function runTier2NER(item: RawItem): Promise<ExtractionResult> {
 
 function dedupe(arr: string[]): string[] {
   return [...new Set(arr)];
+}
+
+/**
+ * Deduplicate extracted entities: if a shorter name is a prefix/substring of
+ * a longer name of the same type, keep only the longer (more specific) one.
+ * E.g., "Grace" (person) is dropped when "Grace Huang" (person) exists.
+ */
+function dedupeEntities(entities: ExtractionResult['entities']): ExtractionResult['entities'] {
+  const result: ExtractionResult['entities'] = [];
+  const sorted = [...entities].sort((a, b) => b.name.length - a.name.length); // longest first
+
+  for (const entity of sorted) {
+    const dominated = result.some(
+      existing =>
+        existing.type === entity.type &&
+        existing.name.toLowerCase().includes(entity.name.toLowerCase()) &&
+        existing.name.toLowerCase() !== entity.name.toLowerCase(),
+    );
+    if (!dominated) {
+      result.push(entity);
+    }
+  }
+
+  return result;
 }

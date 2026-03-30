@@ -400,6 +400,23 @@ server.tool(
   },
 );
 
+// ---- delete_item ----------------------------------------------------------
+
+server.tool(
+  'delete_item',
+  'Delete a raw item (message, email, document) by ID',
+  { id: z.string().describe('The raw item ID to delete') },
+  async ({ id }) => {
+    const eng = await getEngine();
+    const existing = eng.rawItems.findById(id);
+    if (!existing) {
+      return { content: [{ type: 'text' as const, text: `Item ${id} not found` }], isError: true };
+    }
+    eng.rawItems.deleteById(id);
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, id }) }] };
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------

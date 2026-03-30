@@ -274,6 +274,11 @@ export class RawItemRepository {
     this.stmtUpdateStatus.run(status, id);
   }
 
+  deleteById(id: string): void {
+    this.db.prepare('DELETE FROM jobs WHERE raw_item_id = ?').run(id);
+    this.db.prepare('DELETE FROM raw_items WHERE id = ?').run(id);
+  }
+
   search(query: string, limit = 20): RawItem[] {
     try {
       const rows = this.db
