@@ -9,6 +9,7 @@ export interface SystemStats {
   pendingJobCount: number;
   attentionItemCount: number;
   lastSyncAt: number | null;
+  channels: string[];
 }
 
 export interface Entity {

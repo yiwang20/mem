@@ -95,6 +95,13 @@ function ErrorState({ message }: { message: string }) {
 function TimelineTab({ entityId }: { entityId: string }) {
   const [filters, setFilters] = useState<FilterState>({ channel: '', q: '' });
 
+  // Fetch available channels from system stats
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: () => api.getStats(),
+    staleTime: 60_000,
+  });
+
   const {
     data,
     fetchNextPage,
@@ -130,7 +137,7 @@ function TimelineTab({ entityId }: { entityId: string }) {
 
   return (
     <div>
-      <TimelineFilters filters={filters} onChange={handleFiltersChange} />
+      <TimelineFilters filters={filters} onChange={handleFiltersChange} availableChannels={stats?.channels} />
 
       {isLoading && <LoadingState />}
       {isError && <ErrorState message="Failed to load timeline." />}

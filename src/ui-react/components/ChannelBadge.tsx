@@ -2,15 +2,17 @@
 // Channel badge — pill indicator for email / iMessage / meeting / document
 // ---------------------------------------------------------------------------
 
-const CHANNEL_CONFIG = {
+const CHANNEL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   email: { label: 'Email', color: '#6B8EC4', bg: 'rgba(107,142,196,0.12)' },
   imessage: { label: 'iMessage', color: '#6B9E8A', bg: 'rgba(107,158,138,0.12)' },
+  slack: { label: 'Slack', color: '#E01E5A', bg: 'rgba(224,30,90,0.12)' },
+  telegram: { label: 'Telegram', color: '#0088CC', bg: 'rgba(0,136,204,0.12)' },
   meeting: { label: 'Meeting', color: '#8B7EC8', bg: 'rgba(139,126,200,0.12)' },
   document: { label: 'Document', color: '#C4A86B', bg: 'rgba(196,168,107,0.12)' },
   file: { label: 'File', color: '#C4A86B', bg: 'rgba(196,168,107,0.12)' },
-} as const;
+};
 
-type ChannelType = keyof typeof CHANNEL_CONFIG;
+type ChannelType = string;
 
 const SIZE_CONFIG = {
   sm: { fontSize: '10px', padding: '1px 6px', letterSpacing: '0.04em' },

@@ -58,6 +58,7 @@ export interface SystemStats {
   pendingJobCount: number;
   attentionItemCount: number;
   lastSyncAt: number | null;
+  channels: string[];
 }
 
 export class MindFlowEngine {
@@ -653,6 +654,11 @@ export class MindFlowEngine {
       .get() as { t: number | null };
     const lastSyncAt = lastSyncRow.t ?? null;
 
+    const channelRows = db
+      .prepare('SELECT DISTINCT channel FROM raw_items ORDER BY channel')
+      .all() as Array<{ channel: string }>;
+    const channels = channelRows.map(r => r.channel);
+
     return {
       rawItemCount,
       entityCount,
@@ -660,6 +666,7 @@ export class MindFlowEngine {
       pendingJobCount,
       attentionItemCount,
       lastSyncAt,
+      channels,
     };
   }
 

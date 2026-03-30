@@ -1,20 +1,39 @@
 import { useState, useCallback } from 'react';
 
 export interface FilterState {
-  channel: 'email' | 'imessage' | 'file' | '';
+  channel: string;
   q: string;
+}
+
+/** Well-known channel display config. Unknown channels get a neutral style. */
+const CHANNEL_DISPLAY: Record<string, { label: string; color: string }> = {
+  email: { label: 'Email', color: '#6B8EC4' },
+  imessage: { label: 'iMessage', color: '#6B9E8A' },
+  file: { label: 'File', color: '#C4A86B' },
+  slack: { label: 'Slack', color: '#E01E5A' },
+  telegram: { label: 'Telegram', color: '#0088CC' },
+  notion: { label: 'Notion', color: '#999' },
+};
+
+function getChannelDisplay(ch: string): { label: string; color: string } {
+  return CHANNEL_DISPLAY[ch] ?? {
+    label: ch.charAt(0).toUpperCase() + ch.slice(1),
+    color: '#8A8A8A',
+  };
 }
 
 interface TimelineFiltersProps {
   filters: FilterState;
   onChange: (filters: FilterState) => void;
+  /** Available channel values from the system. When provided, only these are shown. */
+  availableChannels?: string[];
 }
 
-export function TimelineFilters({ filters, onChange }: TimelineFiltersProps) {
+export function TimelineFilters({ filters, onChange, availableChannels }: TimelineFiltersProps) {
   const [localQ, setLocalQ] = useState(filters.q);
 
   const handleChannelChange = useCallback(
-    (channel: FilterState['channel']) => {
+    (channel: string) => {
       onChange({ ...filters, channel });
     },
     [filters, onChange],
@@ -29,12 +48,11 @@ export function TimelineFilters({ filters, onChange }: TimelineFiltersProps) {
     [filters, localQ, onChange],
   );
 
-  const channels: Array<{ value: FilterState['channel']; label: string; color: string }> = [
-    { value: '', label: 'All', color: 'var(--text-tertiary)' },
-    { value: 'email', label: 'Email', color: '#6B8EC4' },
-    { value: 'imessage', label: 'iMessage', color: '#6B9E8A' },
-    { value: 'file', label: 'File', color: '#C4A86B' },
-  ];
+  // Build channel pill list: "All" + available channels
+  const channelList = (availableChannels ?? []).map(ch => ({
+    value: ch,
+    ...getChannelDisplay(ch),
+  }));
 
   return (
     <div
@@ -48,7 +66,25 @@ export function TimelineFilters({ filters, onChange }: TimelineFiltersProps) {
     >
       {/* Channel filter pills */}
       <div style={{ display: 'flex', gap: '4px' }}>
-        {channels.map(({ value, label, color }) => {
+        {/* "All" pill */}
+        <button
+          onClick={() => handleChannelChange('')}
+          style={{
+            padding: '4px 10px',
+            borderRadius: '9999px',
+            border: filters.channel === '' ? '1px solid var(--text-tertiary)' : '1px solid var(--border)',
+            background: filters.channel === '' ? 'rgba(128,128,128,0.1)' : 'var(--surface)',
+            color: filters.channel === '' ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >
+          ALL
+        </button>
+        {channelList.map(({ value, label, color }) => {
           const active = filters.channel === value;
           return (
             <button

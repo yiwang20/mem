@@ -31,7 +31,7 @@ const TimelineQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   after: z.coerce.number().optional(),
   before: z.coerce.number().optional(),
-  channel: z.enum(['email', 'imessage', 'file']).optional(),
+  channel: z.string().optional(),
   q: z.string().min(1).optional(),
 });
 
