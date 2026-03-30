@@ -225,19 +225,36 @@ function topicNameQuality(name: string): number {
   return score;
 }
 
-/** Check if two normalized topic names are similar enough to merge */
+/**
+ * Check if two normalized topic names represent the SAME concept (should merge).
+ *
+ * Key insight: short name contained in long name means PARENT-CHILD, not same topic.
+ * "3P SAIN" vs "3P SAIN Main Channel..." → parent-child → DON'T merge
+ * "3P SAIN" vs "SAIN 3P" → same concept → merge
+ *
+ * Rules:
+ * 1. Length ratio must be > 0.5 (prevents merging different hierarchy levels)
+ * 2. Token overlap must be ≥ 80% of the smaller set (strict similarity)
+ */
 function topicsSimilar(a: string, b: string): boolean {
   if (a === b) return true;
-  // One contains the other
-  if (a.includes(b) || b.includes(a)) return true;
-  // Token overlap: if 60%+ tokens match, they're the same topic
+
+  // Length ratio: if names are very different lengths, they're likely
+  // different hierarchy levels (parent vs child), not the same topic
+  const lenRatio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  if (lenRatio < 0.5) return false;
+
+  // One fully contains the other AND similar length → same concept
+  if ((a.includes(b) || b.includes(a)) && lenRatio >= 0.7) return true;
+
+  // Token overlap: strict 80% threshold
   const tokA = new Set(a.split(/\s+/).filter(t => t.length > 1));
   const tokB = new Set(b.split(/\s+/).filter(t => t.length > 1));
   if (tokA.size === 0 || tokB.size === 0) return false;
   let overlap = 0;
   for (const t of tokA) { if (tokB.has(t)) overlap++; }
   const smaller = Math.min(tokA.size, tokB.size);
-  return smaller > 0 && overlap / smaller >= 0.6;
+  return smaller > 0 && overlap / smaller >= 0.8;
 }
 
 type TopicRow = { id: string; canonical_name: string; aliases: string };
