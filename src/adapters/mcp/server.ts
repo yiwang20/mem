@@ -208,10 +208,11 @@ server.tool(
     recipients: z.array(z.string()).optional().describe('Recipient names or identifiers'),
     externalId: z.string().optional().describe('External ID for deduplication (e.g., email message-id, slack ts)'),
     threadId: z.string().nullable().optional().describe('Thread/conversation ID for grouping related items'),
+    topic: z.string().optional().describe('Explicit topic name to file this item under (e.g. Slack channel name, project name). When provided, a topic entity is created or matched and the item is linked to it. Only set this when the topic is clear.'),
     eventTime: z.number().optional().describe('When this event occurred (Unix ms). Defaults to now.'),
     metadata: z.record(z.unknown()).optional().describe('Arbitrary metadata (tags, etc.)'),
   },
-  async ({ channel, sourceUrl, subject, body, bodyFormat, sender, recipients, externalId, threadId, eventTime, metadata }) => {
+  async ({ channel, sourceUrl, subject, body, bodyFormat, sender, recipients, externalId, threadId, topic, eventTime, metadata }) => {
     const eng = await getEngine();
     const now = Date.now();
     const contentHash = createHash('sha256').update(body).digest('hex');
@@ -245,6 +246,7 @@ server.tool(
         sourceUrl,
         sender: sender ?? undefined,
         recipients: recipients ?? undefined,
+        topic: topic ?? undefined,
       },
     };
 

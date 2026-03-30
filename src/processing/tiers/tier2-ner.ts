@@ -144,6 +144,18 @@ export async function runTier2NER(item: RawItem): Promise<ExtractionResult> {
     });
   }
 
+  // --- Extract explicit topic from metadata (set by agent at ingest time) ---
+  const topicHint = typeof item.metadata?.topic === 'string' ? item.metadata.topic.trim() : null;
+  if (topicHint && topicHint.length >= 2) {
+    entities.push({
+      type: EntityType.Topic,
+      name: topicHint,
+      nameAlt: null,
+      attributes: { source: 'explicit_topic' },
+      confidence: 0.95,
+    });
+  }
+
   // --- Extract topic from threadId (Slack threads often have meaningful names) ---
   if (item.threadId) {
     // Convert slug-style thread IDs to readable topic names: "auth-migration" -> "Auth Migration"
