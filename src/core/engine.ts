@@ -50,6 +50,8 @@ import { MockProvider } from '../llm/provider.js';
 import { detectOpenClawCredentials } from '../llm/openclaw-provider.js';
 import { AzureProvider } from '../llm/azure-provider.js';
 import { ulid } from '../utils/ulid.js';
+import { BackgroundScheduler } from './background-scheduler.js';
+import { runEmbeddingDiscovery } from './embedding-discovery.js';
 
 export interface SystemStats {
   rawItemCount: number;
@@ -99,6 +101,7 @@ export class MindFlowEngine {
   private llmProvider: LLMProvider;
   /** True when the caller supplied an explicit provider; auto-detection is skipped. */
   private readonly explicitProvider: boolean;
+  private scheduler: BackgroundScheduler | null = null;
 
   constructor(config: Partial<MindFlowConfig> = {}, llmProvider?: LLMProvider) {
     // Validate and apply defaults
@@ -197,6 +200,14 @@ export class MindFlowEngine {
       if (detectedProvider !== null) {
         this.rewireProvider(detectedProvider);
       }
+    }
+
+    this.scheduler = new BackgroundScheduler(this.db.db, process.env['LLM_PROXY_URL']);
+    this.scheduler.start();
+
+    // Phase 4: daily embedding discovery
+    if (typeof this.scheduler.startDailyDiscovery === 'function') {
+      this.scheduler.startDailyDiscovery(() => runEmbeddingDiscovery(this.db.db));
     }
 
     this.initialized = true;
@@ -683,6 +694,7 @@ export class MindFlowEngine {
 
   /** Shut down the engine and release all resources. */
   close(): void {
+    this.scheduler?.stop();
     this.ingestionManager.stop();
     this.pipeline.stop();
     this.db.close();
