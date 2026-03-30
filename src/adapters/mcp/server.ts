@@ -193,6 +193,183 @@ server.tool(
 // WRITE TOOLS — External agents push data into MindFlow
 // ==========================================================================
 
+// ---- Topic matching helpers ------------------------------------------------
+
+/** Strip dates, filler words, normalize for comparison */
+function normalizeTopic(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\d{4}[\s\-\/]\d{2}[\s\-\/]\d{2}/g, '')       // YYYY-MM-DD / YYYY MM DD
+    .replace(/\b\d{2}[\s\-\/]\d{2}[\s\-\/]\d{4}/g, '')       // DD-MM-YYYY
+    .replace(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s*\d{1,2}/gi, '')
+    .replace(/\b\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*/gi, '')
+    .replace(/\b(?:main|channel|tiger\s*team|working\s*group|squad)\b/gi, '')
+    .replace(/[\-–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Score how good a topic name is. Higher = better canonical name. */
+function topicNameQuality(name: string): number {
+  let score = 10;
+  // Penalize dates
+  if (/\d{4}/.test(name)) score -= 3;
+  if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(name)) score -= 2;
+  // Penalize filler
+  if (/\b(?:main|channel)\b/i.test(name)) score -= 1;
+  // Prefer concise (3-50 chars ideal)
+  if (name.length < 3) score -= 5;
+  if (name.length > 60) score -= 2;
+  // Prefer proper capitalization
+  if (/^[A-Z0-9]/.test(name)) score += 1;
+  return score;
+}
+
+/** Check if two normalized topic names are similar enough to merge */
+function topicsSimilar(a: string, b: string): boolean {
+  if (a === b) return true;
+  // One contains the other
+  if (a.includes(b) || b.includes(a)) return true;
+  // Token overlap: if 60%+ tokens match, they're the same topic
+  const tokA = new Set(a.split(/\s+/).filter(t => t.length > 1));
+  const tokB = new Set(b.split(/\s+/).filter(t => t.length > 1));
+  if (tokA.size === 0 || tokB.size === 0) return false;
+  let overlap = 0;
+  for (const t of tokA) { if (tokB.has(t)) overlap++; }
+  const smaller = Math.min(tokA.size, tokB.size);
+  return smaller > 0 && overlap / smaller >= 0.6;
+}
+
+type TopicRow = { id: string; canonical_name: string; aliases: string };
+
+/**
+ * Find an existing topic by fuzzy match, or create a new one.
+ * If matched, upgrade the canonical name if the incoming name is better.
+ */
+function findOrCreateTopic(db: any, incoming: string, now: number): { id: string } {
+  const normIncoming = normalizeTopic(incoming);
+
+  // 1. Exact match (case-insensitive)
+  const exact = db
+    .prepare("SELECT id, canonical_name, aliases FROM entities WHERE type = 'topic' AND LOWER(canonical_name) = LOWER(?) AND status != 'merged' LIMIT 1")
+    .get(incoming) as TopicRow | undefined;
+  if (exact) {
+    db.prepare("UPDATE entities SET last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+      .run(now, now, exact.id);
+    return { id: exact.id };
+  }
+
+  // 2. Fuzzy match against all active topics
+  const allTopics = db
+    .prepare("SELECT id, canonical_name, aliases FROM entities WHERE type = 'topic' AND status != 'merged'")
+    .all() as TopicRow[];
+
+  let bestMatch: TopicRow | null = null;
+  for (const t of allTopics) {
+    const normExisting = normalizeTopic(t.canonical_name);
+    if (topicsSimilar(normIncoming, normExisting)) {
+      bestMatch = t;
+      break;
+    }
+    // Also check aliases
+    const aliases: string[] = JSON.parse(t.aliases || '[]');
+    for (const alias of aliases) {
+      if (topicsSimilar(normIncoming, normalizeTopic(alias))) {
+        bestMatch = t;
+        break;
+      }
+    }
+    if (bestMatch) break;
+  }
+
+  if (bestMatch) {
+    // Decide if incoming name is better
+    const existingQuality = topicNameQuality(bestMatch.canonical_name);
+    const incomingQuality = topicNameQuality(incoming);
+
+    if (incomingQuality > existingQuality) {
+      // Upgrade canonical name, demote old name to alias
+      const aliases: string[] = JSON.parse(bestMatch.aliases || '[]');
+      if (!aliases.includes(bestMatch.canonical_name)) {
+        aliases.push(bestMatch.canonical_name);
+      }
+      if (!aliases.includes(incoming)) {
+        // don't add the new canonical as alias
+      }
+      db.prepare("UPDATE entities SET canonical_name = ?, aliases = ?, last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+        .run(incoming, JSON.stringify(aliases), now, now, bestMatch.id);
+    } else {
+      // Keep existing name, add incoming as alias
+      const aliases: string[] = JSON.parse(bestMatch.aliases || '[]');
+      if (!aliases.includes(incoming) && incoming.toLowerCase() !== bestMatch.canonical_name.toLowerCase()) {
+        aliases.push(incoming);
+        db.prepare("UPDATE entities SET aliases = ?, last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+          .run(JSON.stringify(aliases), now, now, bestMatch.id);
+      } else {
+        db.prepare("UPDATE entities SET last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+          .run(now, now, bestMatch.id);
+      }
+    }
+
+    return { id: bestMatch.id };
+  }
+
+  // 3. No match — create new topic
+  const topicId = ulid();
+  db.prepare(`INSERT INTO entities (id, type, canonical_name, name_alt, aliases, attributes, confidence, status, merged_into, first_seen_at, last_seen_at, created_at, updated_at)
+    VALUES (?, 'topic', ?, NULL, '[]', ?, 0.95, 'active', NULL, ?, ?, ?, ?)`)
+    .run(topicId, incoming, JSON.stringify({ source: 'explicit_topic' }), now, now, now, now);
+  return { id: topicId };
+}
+
+/**
+ * Infer parent-child hierarchy among topics by name containment.
+ * If topic A's normalized name is fully contained in topic B's normalized name,
+ * and A is significantly shorter, then A is the parent of B.
+ */
+function inferTopicHierarchy(db: any): void {
+  const topics = db
+    .prepare("SELECT id, canonical_name FROM entities WHERE type = 'topic' AND status != 'merged'")
+    .all() as Array<{ id: string; canonical_name: string }>;
+
+  // Build normalized name map
+  const normalized = topics.map(t => ({
+    ...t,
+    norm: normalizeTopic(t.canonical_name),
+  }));
+
+  for (const child of normalized) {
+    // Skip if already has a parent
+    const current = db
+      .prepare("SELECT parent_entity_id FROM entities WHERE id = ?")
+      .get(child.id) as { parent_entity_id: string | null };
+    if (current.parent_entity_id) continue;
+
+    let bestParent: typeof normalized[0] | null = null;
+    let bestParentLen = 0;
+
+    for (const parent of normalized) {
+      if (parent.id === child.id) continue;
+      // Parent name must be shorter and contained in child name
+      if (parent.norm.length >= child.norm.length) continue;
+      if (parent.norm.length < 2) continue;
+      if (!child.norm.includes(parent.norm)) continue;
+      // Parent should be meaningfully shorter (at least 30% shorter)
+      if (parent.norm.length > child.norm.length * 0.7) continue;
+      // Pick the longest matching parent (most specific)
+      if (parent.norm.length > bestParentLen) {
+        bestParent = parent;
+        bestParentLen = parent.norm.length;
+      }
+    }
+
+    if (bestParent) {
+      db.prepare("UPDATE entities SET parent_entity_id = ?, updated_at = ? WHERE id = ?")
+        .run(bestParent.id, Date.now(), child.id);
+    }
+  }
+}
+
 // ---- ingest_item ----------------------------------------------------------
 
 server.tool(
@@ -252,32 +429,14 @@ server.tool(
 
     eng.rawItems.insert(item);
 
-    // Directly create/match explicit topic entities and link them to the item
-    // (bypass NER pipeline to prevent entity resolver from merging them)
+    // Directly create/match explicit topic entities and link them to the item.
+    // Uses smart fuzzy matching and picks the best canonical name.
     if (topics && topics.length > 0) {
       for (const topicName of topics) {
         if (!topicName || topicName.trim().length < 2) continue;
-        const trimmedTopic = topicName.trim();
+        const incoming = topicName.trim();
 
-        // Find existing topic with exact name match
-        let topicEntity = eng.db.db
-          .prepare("SELECT id FROM entities WHERE type = 'topic' AND canonical_name = ? AND status != 'merged' LIMIT 1")
-          .get(trimmedTopic) as { id: string } | undefined;
-
-        if (!topicEntity) {
-          // Create new topic entity
-          const topicId = ulid();
-          eng.db.db
-            .prepare(`INSERT INTO entities (id, type, canonical_name, name_alt, aliases, attributes, confidence, status, merged_into, first_seen_at, last_seen_at, created_at, updated_at)
-              VALUES (?, 'topic', ?, NULL, '[]', ?, 0.95, 'active', NULL, ?, ?, ?, ?)`)
-            .run(topicId, trimmedTopic, JSON.stringify({ source: 'explicit_topic' }), now, now, now, now);
-          topicEntity = { id: topicId };
-        } else {
-          // Update last_seen_at
-          eng.db.db
-            .prepare("UPDATE entities SET last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
-            .run(now, now, topicEntity.id);
-        }
+        const topicEntity = findOrCreateTopic(eng.db.db, incoming, now);
 
         // Link item to topic
         try {
@@ -286,6 +445,9 @@ server.tool(
             .run(topicEntity.id, item.id);
         } catch { /* ignore duplicate */ }
       }
+
+      // After all topics are linked, infer hierarchy from name containment
+      inferTopicHierarchy(eng.db.db);
     }
 
     // Enqueue for processing pipeline
