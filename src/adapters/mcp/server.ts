@@ -265,7 +265,10 @@ server.tool(
       error: null,
     });
 
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ingested', id: item.id, contentHash }) }] };
+    // Auto-process the ingested item (no need for a separate process_pending call)
+    await eng.ingest();
+
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ingested_and_processed', id: item.id, contentHash }) }] };
   },
 );
 
