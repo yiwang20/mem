@@ -49,6 +49,7 @@ import { QueryEngine } from '../query/engine.js';
 import { MockProvider } from '../llm/provider.js';
 import { detectOpenClawCredentials } from '../llm/openclaw-provider.js';
 import { AzureProvider } from '../llm/azure-provider.js';
+import { HttpProxyProvider } from '../llm/http-proxy-provider.js';
 import { ulid } from '../utils/ulid.js';
 import { BackgroundScheduler } from './background-scheduler.js';
 import { runEmbeddingDiscovery } from './embedding-discovery.js';
@@ -726,7 +727,13 @@ export class MindFlowEngine {
       });
     }
 
-    // 2. OpenClaw — read Anthropic token from ~/.openclaw credentials file
+    // 2. HTTP proxy — reuse x-agent's LLM gateway
+    const proxyUrl = process.env['LLM_PROXY_URL'];
+    if (proxyUrl) {
+      return new HttpProxyProvider(proxyUrl);
+    }
+
+    // 3. OpenClaw — read Anthropic token from ~/.openclaw credentials file
     return detectOpenClawCredentials();
   }
 

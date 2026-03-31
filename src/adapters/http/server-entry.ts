@@ -71,8 +71,17 @@ mkdirSync(join(dataDir, 'logs'), { recursive: true });
 // Override the migrations directory to point to the bundled migrations.
 // When esbuild bundles this file to dist/server/index.js, __dirname resolves to
 // dist/server/, and the migrations are copied to dist/server/migrations/.
+// Only set if the bundled migrations directory actually exists; otherwise let
+// database.ts resolve to the project-root migrations/ via its own __dirname.
 if (!process.env['MINDFLOW_MIGRATIONS_DIR']) {
-  process.env['MINDFLOW_MIGRATIONS_DIR'] = join(__dirname, 'migrations');
+  const bundledMigrations = join(__dirname, 'migrations');
+  try {
+    const { readdirSync } = await import('fs');
+    readdirSync(bundledMigrations);
+    process.env['MINDFLOW_MIGRATIONS_DIR'] = bundledMigrations;
+  } catch {
+    // Not a bundled deployment — let database.ts use its default
+  }
 }
 
 const engine = new MindFlowEngine({ dataDir, dbPath });

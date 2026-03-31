@@ -119,9 +119,9 @@ server.tool(
       entities = eng.entities.search(search, max);
       if (type) entities = entities.filter((e) => e.type === type);
     } else if (type) {
-      entities = eng.graphOps.getTopEntities(type, max, 'recent');
+      entities = eng.graphOps.getTopEntities(type, max, 'recency');
     } else {
-      entities = eng.graphOps.getTopEntities(EntityType.Person, max, 'recent');
+      entities = eng.graphOps.getTopEntities(EntityType.Person, max, 'recency');
     }
     return { content: [{ type: 'text' as const, text: JSON.stringify(entities, null, 2) }] };
   },
@@ -709,11 +709,13 @@ server.tool(
       rawItemId: item.id,
       stage: JobStage.Triage,
       status: 'pending' as any,
+      priority: 0,
       attempts: 0,
       maxAttempts: 3,
+      lastError: null,
       createdAt: now,
-      updatedAt: now,
-      error: null,
+      startedAt: null,
+      completedAt: null,
     });
 
     // Process pipeline + taxonomy update in background (fire-and-forget)

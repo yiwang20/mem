@@ -348,7 +348,6 @@ async function generateOverview(
 ): Promise<string | null> {
   type RawItemRow = { id: string; subject: string | null; body: string; event_time: number };
   type KeyFactRow = { canonical_name: string };
-  type PersonRow = { canonical_name: string };
 
   let episodes: RawItemRow[];
 
@@ -424,31 +423,57 @@ async function generateOverview(
     .all(topicId, topicId) as KeyFactRow[];
 
   // Related people via relationships
+  type PersonWithIdRow = { id: string; canonical_name: string };
   const relatedPeople = db
     .prepare(
-      `SELECT e.canonical_name
+      `SELECT e.id, e.canonical_name
        FROM relationships rel
        JOIN entities e ON e.id = rel.to_entity_id
        WHERE rel.from_entity_id = ? AND e.type = 'person' AND e.status != 'merged'
        UNION
-       SELECT e.canonical_name
+       SELECT e.id, e.canonical_name
        FROM relationships rel
        JOIN entities e ON e.id = rel.from_entity_id
        WHERE rel.to_entity_id = ? AND e.type = 'person' AND e.status != 'merged'
        LIMIT 10`,
     )
-    .all(topicId, topicId) as PersonRow[];
+    .all(topicId, topicId) as PersonWithIdRow[];
+
+  // Sub-topics (children)
+  type SubTopicRow = { id: string; canonical_name: string };
+  const subTopics = db
+    .prepare(
+      `SELECT id, canonical_name FROM entities
+       WHERE parent_entity_id = ? AND type = 'topic' AND status != 'merged'
+       ORDER BY canonical_name`,
+    )
+    .all(topicId) as SubTopicRow[];
+
+  // Related entities (organizations, tools, etc.) linked via relationships
+  type RelatedEntityRow = { id: string; canonical_name: string; type: string };
+  const relatedEntities = db
+    .prepare(
+      `SELECT DISTINCT e.id, e.canonical_name, e.type
+       FROM relationships rel
+       JOIN entities e ON e.id = rel.to_entity_id
+       WHERE rel.from_entity_id = ? AND e.type NOT IN ('key_fact', 'person', 'topic') AND e.status != 'merged'
+       UNION
+       SELECT DISTINCT e.id, e.canonical_name, e.type
+       FROM relationships rel
+       JOIN entities e ON e.id = rel.from_entity_id
+       WHERE rel.to_entity_id = ? AND e.type NOT IN ('key_fact', 'person', 'topic') AND e.status != 'merged'
+       LIMIT 15`,
+    )
+    .all(topicId, topicId) as RelatedEntityRow[];
 
   // Build prompt sections
   const sections: string[] = [];
 
   sections.push(
-    `Topic: "${topicName}" (${episodeCount} messages total)\n\n` +
-    'Summarize this topic in 2–4 sentences based on the information below. ' +
-    'Be concise and focus on the most important aspects. ' +
-    'When citing a specific piece of information from a message, link it using the format [key info](source:RAW_ITEM_ID) ' +
-    'where RAW_ITEM_ID is the id of the source message. ' +
-    'Do not use JSON output — respond with plain markdown text only.',
+    `Topic: "${topicName}" (${episodeCount} messages)\n\n` +
+    'Write a brief overview (under 100 words) of this topic. ' +
+    'Markdown OK. Link syntax: [text](source:RAW_ITEM_ID) for citations, [Name](entity:ENTITY_ID) for entities.\n' +
+    'No JSON.',
   );
 
   if (episodes.length > 0) {
@@ -465,7 +490,18 @@ async function generateOverview(
   }
 
   if (relatedPeople.length > 0) {
-    sections.push('Related people:\n' + relatedPeople.map((p) => `  - ${p.canonical_name}`).join('\n'));
+    sections.push('Related people (use [Name](entity:ID) to link):\n' +
+      relatedPeople.map((p) => `  - ${p.canonical_name} (id: ${p.id})`).join('\n'));
+  }
+
+  if (subTopics.length > 0) {
+    sections.push('Sub-topics (use [Name](entity:ID) to link):\n' +
+      subTopics.map((t) => `  - ${t.canonical_name} (id: ${t.id})`).join('\n'));
+  }
+
+  if (relatedEntities.length > 0) {
+    sections.push('Related entities (use [Name](entity:ID) to link):\n' +
+      relatedEntities.map((e) => `  - ${e.canonical_name} [${e.type}] (id: ${e.id})`).join('\n'));
   }
 
   const prompt = sections.join('\n\n');
@@ -478,7 +514,25 @@ async function generateOverview(
   };
 
   const result = await llmProvider.answer(prompt, emptyContext).catch(() => null);
-  return result?.answer || null;
+  let content = result?.answer || null;
+
+  // The LLM may wrap markdown in a JSON code block — extract the actual answer
+  if (content) {
+    // Strip ```json ... ``` wrapper if present
+    const jsonBlockMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (jsonBlockMatch) {
+      try {
+        const parsed = JSON.parse(jsonBlockMatch[1]!);
+        if (typeof parsed.answer === 'string') {
+          content = parsed.answer;
+        }
+      } catch {
+        // Not valid JSON inside the block — use as-is
+      }
+    }
+  }
+
+  return content;
 }
 
 /**

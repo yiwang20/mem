@@ -12,6 +12,7 @@ import type {
   ExtractionResult,
   LLMProvider,
 } from '../types/index.js';
+import { DetectedLanguage } from '../types/index.js';
 import { buildExtractionPrompt, buildAnswerPrompt } from './prompts.js';
 
 export class HttpProxyProvider implements LLMProvider {
@@ -29,15 +30,19 @@ export class HttpProxyProvider implements LLMProvider {
         entities: parsed.entities ?? [],
         relationships: parsed.relationships ?? [],
         summary: parsed.summary ?? '',
-        language: parsed.language ?? null,
+        language: parsed.language ?? DetectedLanguage.English,
       };
     } catch {
-      return { entities: [], relationships: [], summary: '', language: null };
+      return { entities: [], relationships: [], summary: '', language: DetectedLanguage.English };
     }
   }
 
   async answer(query: string, context: AnswerContext): Promise<AnswerResult> {
-    const prompt = buildAnswerPrompt(query, context);
+    const itemSummaries = context.relevantItems.map(
+      (item) => `[${item.id}] ${item.subject ?? ''}: ${item.body?.slice(0, 200) ?? ''}`,
+    );
+    const entitySummaries = (context as any).entitySummaries ?? [];
+    const prompt = buildAnswerPrompt(query, itemSummaries, entitySummaries);
     const raw = await this.complete(prompt);
 
     try {

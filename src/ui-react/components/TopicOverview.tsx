@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
 import { api } from '../lib/api.js';
 
 // ---------------------------------------------------------------------------
@@ -15,11 +16,42 @@ const OVERVIEW_CSS = `
   margin-bottom: 16px;
 }
 
-.mf-overview-text {
+.mf-overview-content {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
-  margin: 0;
+}
+
+.mf-overview-content h1,
+.mf-overview-content h2,
+.mf-overview-content h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 10px 0 4px 0;
+}
+
+.mf-overview-content h1:first-child,
+.mf-overview-content h2:first-child,
+.mf-overview-content h3:first-child {
+  margin-top: 0;
+}
+
+.mf-overview-content p {
+  margin: 0 0 8px 0;
+}
+
+.mf-overview-content p:last-child {
+  margin-bottom: 0;
+}
+
+.mf-overview-content ul {
+  margin: 4px 0 8px 0;
+  padding-left: 20px;
+}
+
+.mf-overview-content li {
+  margin-bottom: 4px;
 }
 
 .mf-overview-link {
@@ -27,12 +59,10 @@ const OVERVIEW_CSS = `
   text-decoration: underline;
   text-decoration-style: dotted;
   cursor: pointer;
-  background: none;
-  border: none;
-  font-size: inherit;
-  font-family: inherit;
-  line-height: inherit;
-  padding: 0;
+}
+
+.mf-overview-link:hover {
+  text-decoration-style: solid;
 }
 
 .mf-overview-skeleton-line {
@@ -50,40 +80,6 @@ function injectCss() {
   const style = document.createElement('style');
   style.textContent = OVERVIEW_CSS;
   document.head.appendChild(style);
-}
-
-// ---------------------------------------------------------------------------
-// Source link parsing
-// ---------------------------------------------------------------------------
-
-// Matches [text](source:RAW_ITEM_ID)
-const SOURCE_LINK_RE = /\[([^\]]+)\]\(source:([^)]+)\)/g;
-
-interface OverviewSegment {
-  type: 'text' | 'link';
-  text: string;
-  rawItemId?: string;
-}
-
-function parseOverviewContent(content: string): OverviewSegment[] {
-  const segments: OverviewSegment[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  SOURCE_LINK_RE.lastIndex = 0;
-  while ((match = SOURCE_LINK_RE.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ type: 'text', text: content.slice(lastIndex, match.index) });
-    }
-    segments.push({ type: 'link', text: match[1], rawItemId: match[2] });
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < content.length) {
-    segments.push({ type: 'text', text: content.slice(lastIndex) });
-  }
-
-  return segments;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +104,31 @@ export function TopicOverview({ topicId, topicStatus }: TopicOverviewProps) {
     retry: false,
   });
 
+  // Custom link renderer for source: and entity: links
+  const renderLink = useCallback(
+    (props: { href?: string; children?: React.ReactNode }) => {
+      const href = props.href ?? '';
+      if (href.startsWith('source:')) {
+        const id = href.slice(7);
+        return (
+          <a className="mf-overview-link" onClick={(e) => { e.preventDefault(); navigate(`/items/${id}`); }} href="#">
+            {props.children}
+          </a>
+        );
+      }
+      if (href.startsWith('entity:')) {
+        const id = href.slice(7);
+        return (
+          <a className="mf-overview-link" onClick={(e) => { e.preventDefault(); navigate(`/entities/${id}`); }} href="#">
+            {props.children}
+          </a>
+        );
+      }
+      return <a href={href} target="_blank" rel="noopener noreferrer">{props.children}</a>;
+    },
+    [navigate],
+  );
+
   if (isLoading) {
     return (
       <div className="mf-overview">
@@ -122,26 +143,16 @@ export function TopicOverview({ topicId, topicStatus }: TopicOverviewProps) {
 
   if (!data?.overview) return null;
 
-  const segments = parseOverviewContent(data.overview.content);
-
   return (
     <div className="mf-overview">
-      <p className="mf-overview-text">
-        {segments.map((seg, i) => {
-          if (seg.type === 'link' && seg.rawItemId) {
-            return (
-              <button
-                key={i}
-                className="mf-overview-link"
-                onClick={() => navigate(`/items/${seg.rawItemId}`)}
-              >
-                {seg.text}
-              </button>
-            );
-          }
-          return <span key={i}>{seg.text}</span>;
-        })}
-      </p>
+      <div className="mf-overview-content">
+        <ReactMarkdown
+          components={{ a: renderLink }}
+          urlTransform={(url) => url}
+        >
+          {data.overview.content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }

@@ -60,7 +60,6 @@ export class HttpServer {
       await this.app.register(staticFiles, {
         root: UI_DIR,
         prefix: '/',
-        decorateReply: false,
       });
     }
 
